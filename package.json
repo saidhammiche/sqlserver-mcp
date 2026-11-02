@@ -1,0 +1,22 @@
+{
+  "name": "sqlserver-mcp",
+  "version": "2.4.0",
+  "description": "MRS Produktion: MCP-Server, Dashboard (React + Mantine) und KI-Assistent mit Claude",
+  "type": "module",
+  "main": "sqlserver-mcp.js",
+  "scripts": {
+    "start": "node sqlserver-mcp.js",
+    "inspector": "npx @modelcontextprotocol/inspector node sqlserver-mcp.js",
+    "web": "node web-server.js",
+    "ui:dev": "npm --prefix frontend run dev",
+    "ui:build": "npm --prefix frontend install && npm --prefix frontend run build"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.135.0",
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "express": "5.3.0",
+    "mssql": "12.7.9",
+    "zod": "4.6.7"
+  },
+  "engines": { "node": ">=20.19" }
+}
