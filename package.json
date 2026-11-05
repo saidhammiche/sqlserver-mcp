@@ -1,22 +1,32 @@
 {
-  "name": "sqlserver-mcp",
-  "version": "2.4.0",
-  "description": "MRS Produktion: MCP-Server, Dashboard (React + Mantine) und KI-Assistent mit Claude",
+  "name": "mrs-produktion",
+  "version": "4.0.0",
+  "private": true,
   "type": "module",
-  "main": "sqlserver-mcp.js",
+  "description": "MRS Produktion: Dashboard (React + Ant Design) und KI-Assistent mit Claude",
   "scripts": {
-    "start": "node sqlserver-mcp.js",
-    "inspector": "npx @modelcontextprotocol/inspector node sqlserver-mcp.js",
-    "web": "node web-server.js",
-    "ui:dev": "npm --prefix frontend run dev",
-    "ui:build": "npm --prefix frontend install && npm --prefix frontend run build"
+    "build": "vite build",
+    "start": "node server.js",
+    "dev": "vite"
   },
   "dependencies": {
+    "@ant-design/icons": "6.3.4",
+    "@ant-design/x": "2.9.0",
     "@anthropic-ai/sdk": "0.135.0",
-    "@modelcontextprotocol/sdk": "1.32.1",
+    "antd": "6.6.6",
+    "dayjs": "1.11.23",
     "express": "5.3.0",
     "mssql": "12.7.9",
-    "zod": "4.6.7"
+    "nodemailer": "10.2.0",
+    "react": "19.2.9",
+    "react-dom": "19.2.9",
+    "recharts": "3.10.1"
   },
-  "engines": { "node": ">=20.19" }
+  "devDependencies": {
+    "@vitejs/plugin-react": "6.1.2",
+    "vite": "8.3.4"
+  },
+  "engines": {
+    "node": ">=20.19"
+  }
 }

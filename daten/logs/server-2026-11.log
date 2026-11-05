@@ -1,0 +1,29 @@
+2026-11-05T14:40:44.320Z LOG   [Sicherung] 2026-11-05_154044: benutzer.json, aenderungen.log
+2026-11-05T14:40:44.322Z LOG   ============================================================
+2026-11-05T14:40:44.323Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-05T14:40:44.323Z LOG    Datenbank: 20.170.38.231:1433/MRS_BI
+2026-11-05T14:40:44.324Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-05T14:40:44.325Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (nur produktionmonat, seuwerte) – Protokoll: aenderungen.log
+2026-11-05T14:40:44.327Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-05T14:40:44.328Z LOG    Sicherungen: C:\Users\hammiche\sqlserver-mcp\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-05T14:40:44.328Z LOG    Protokoll: C:\Users\hammiche\sqlserver-mcp\logs\server-2026-11.log
+2026-11-05T14:40:44.329Z LOG   ============================================================
+2026-11-05T14:58:10.330Z LOG   ============================================================
+2026-11-05T14:58:10.332Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-05T14:58:10.333Z LOG    Datenbank: 20.170.38.231:1433/MRS_BI
+2026-11-05T14:58:10.334Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-05T14:58:10.335Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (nur produktionmonat, seuwerte) – Protokoll: aenderungen.log
+2026-11-05T14:58:10.337Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-05T14:58:10.339Z LOG    Sicherungen: C:\Users\hammiche\sqlserver-mcp\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-05T14:58:10.340Z LOG    Protokoll: C:\Users\hammiche\sqlserver-mcp\logs\server-2026-11.log
+2026-11-05T14:58:10.341Z LOG   ============================================================
+2026-11-05T14:58:50.733Z LOG   ============================================================
+2026-11-05T14:58:50.735Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-05T14:58:50.735Z LOG    Datenbank: 20.170.38.231:1433/MRS_BI
+2026-11-05T14:58:50.736Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-05T14:58:50.736Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (nur produktionmonat, seuwerte) – Protokoll: aenderungen.log
+2026-11-05T14:58:50.738Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-05T14:58:50.739Z LOG    Sicherungen: C:\Users\hammiche\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-05T14:58:50.739Z LOG    Protokoll: C:\Users\hammiche\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-05T14:58:50.740Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-05T14:58:50.741Z LOG   ============================================================
