@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    container_name: mrs-produktion
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - WEB_PORT=3020
+      - WEB_HOST=0.0.0.0
+    ports:
+      - "3020:3020"
+    volumes:
+      - ./daten:/app/daten
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

@@ -1,7 +1,7 @@
 // =====================================================================
 //  MRS Produktion – SERVEUR (un seul fichier)
 //  Démarrage :  npm run build   (une fois, crée le dossier dist)
-//               npm start       → http://localhost:3000
+//               npm start       → http://185.80.92.91:3000
 //  Service Windows (PowerShell en administrateur) :
 //               node server.js dienst installieren | status | log | neustart | stoppen | starten | entfernen
 //  Données créées par l'application : dossier « daten » (comptes, actions, commentaires, sauvegardes, journal)
@@ -126,7 +126,7 @@ function Status-Zeigen {
   Write-Host "  Dienst        : $Name"
   Write-Host "  Zustand       : $($t.State)" -ForegroundColor $(if ($t.State -eq "Running") { "Green" } else { "Yellow" })
   Write-Host "  Letzter Start : $($info.LastRunTime)"
-  Write-Host "  Erreichbar    : $(if ($antwortet) { "ja, http://localhost:$port" } else { "nein (Port $port)" })" -ForegroundColor $(if ($antwortet) { "Green" } else { "Red" })
+  Write-Host "  Erreichbar    : $(if ($antwortet) { "ja, http://185.80.92.91:$port" } else { "nein (Port $port)" })" -ForegroundColor $(if ($antwortet) { "Green" } else { "Red" })
   Write-Host "  Protokoll     : $(Join-Path $Ordner 'daten\\logs')"
   Write-Host ""
 }
@@ -186,7 +186,7 @@ const MODELL = env("ANTHROPIC_MODEL", "claude-sonnet-5-5");
 const claude = env("ANTHROPIC_API_KEY") ? new Anthropic() : null;
 
 const DB = {
-  server: env("DB_SERVER", "localhost"),
+  server: env("DB_SERVER", "185.80.92.91"),
   port: parseInt(env("DB_PORT", "1433"), 10),
   database: env("DB_DATABASE"),
   user: env("DB_USER"),
@@ -1768,8 +1768,8 @@ app.put("/api/einstellungen/energie", (req, res) => {
 // ---------------------------------------------------------------------
 const SMTP = { host: env("SMTP_HOST", ""), port: parseInt(env("SMTP_PORT", "587"), 10), secure: oui(env("SMTP_SECURE", "false")),
                user: env("SMTP_USER", ""), pass: env("SMTP_PASS", "") };
-const MAIL_FROM = env("MAIL_FROM", SMTP.user || "MRS Produktion <noreply@localhost>");
-const APP_URL = env("APP_URL", `http://localhost:${PORT}`).replace(/\/$/, "");
+const MAIL_FROM = env("MAIL_FROM", SMTP.user || "MRS Produktion <noreply@185.80.92.91>");
+const APP_URL = env("APP_URL", `http://185.80.92.91:${PORT}`).replace(/\/$/, "");
 const MAIL_STUNDE = Math.min(23, Math.max(0, parseInt(env("MAIL_STUNDE", "7"), 10) || 7));
 const mailer = SMTP.host ? nodemailer.createTransport({
   host: SMTP.host, port: SMTP.port, secure: SMTP.secure,
@@ -2038,7 +2038,7 @@ const server = app.listen(PORT, HOST, () => {
   naechtlicheSicherung();
   benachrichtigungenPlanen();
   console.log("=".repeat(60));
-  console.log(` MRS Produktion ${VERSION} läuft: http://localhost:${PORT}`);
+  console.log(` MRS Produktion ${VERSION} läuft: http://185.80.92.91:${PORT}`);
   console.log(` Datenbank: ${DB_INFO}`);
   console.log(claude ? ` KI-Assistent: Claude aktiv (${MODELL})` : " KI-Assistent: ohne KI (ANTHROPIC_API_KEY fehlt in .env)");
   console.log(BEARBEITEN_AKTIV

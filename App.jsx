@@ -4064,7 +4064,7 @@ SMTP_PORT=587
 SMTP_USER=produktion@firma.de
 SMTP_PASS=...
 MAIL_FROM=MRS Produktion <produktion@firma.de>
-APP_URL=http://NAME-DES-SERVERS:3000
+APP_URL=http://185.80.92.91:3020
 MAIL_STUNDE=7`}</pre>} />
         </Card>
       ) : (
@@ -5162,7 +5162,7 @@ function Werk3D({ anlagen, auswahl, onWaehlen, dunkel, beschriftung, heim, animi
       const st = s.current; if (!st) return;
       cancelAnimationFrame(st.raf); st.ro?.disconnect(); st.controls.dispose();
       st.scene.traverse(o => { o.geometry?.dispose(); [].concat(o.material || []).forEach(m => m.dispose()); });
-      st.renderer.dispose(); st.renderer.domElement.remove(); st.labels.domElement.remove();
+      st.renderer.dispose(); st.renderer.forceContextLoss(); st.renderer.domElement.remove(); st.labels.domElement.remove();
       s.current = null;
     };
   }, []);
@@ -5781,7 +5781,7 @@ function Werksplan({ en, massnahmen, warnungen, wartung = LEER_WARTUNG, setWartu
   }, [auswahl]);
 
   // --- codes QR ---
-  const istLokal = (u) => /\/\/(localhost|127\.|\[::1\])/i.test(u);
+  const istLokal = (u) => /\/\/(185.80.92.91|127\.|\[::1\])/i.test(u);
   const qrBasis = (() => { const u = appUrl.replace(/\/$/, ""); return u && !istLokal(u) ? u : !istLokal(location.origin) ? location.origin : null; })();
   const qrLink = (id) => `${qrBasis || location.origin}/#werk/${encodeURIComponent(id)}`;
   async function qrZeigen(el) {
@@ -6315,7 +6315,7 @@ body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #1F2A33; }
             <Text type="secondary" style={{ fontSize: 12, textAlign: "center" }}>Mit der Handy-Kamera scannen: die Fiche von {qr.a.name} öffnet sich nach der Anmeldung.</Text>
             <Text code copyable style={{ fontSize: 12, wordBreak: "break-all" }}>{qr.link}</Text>
             {!qrBasis && <Alert type="warning" showIcon message="Mit dem Handy so nicht erreichbar"
-              description={<>Die Adresse zeigt auf diesen PC (localhost). In der .env <Text code>WEB_HOST=0.0.0.0</Text> und <Text code>APP_URL=http://SERVERNAME:3000</Text> eintragen, neu starten und die Codes neu drucken.</>} />}
+              description={<>Die Adresse zeigt auf diesen PC (185.80.92.91). In der .env <Text code>WEB_HOST=0.0.0.0</Text> und <Text code>APP_URL=http://SERVERNAME:3000</Text> eintragen, neu starten und die Codes neu drucken.</>} />}
           </Flex>
         )}
       </Modal>

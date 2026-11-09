@@ -10,8 +10,8 @@ Deux fichiers principaux :
 3. `npm run build`   (crée le dossier `dist` avec l'interface)
 
 ## Démarrer
-`npm start`  → http://localhost:3000
+`npm start`  → http://185.80.92.91:3000
 
 ## Après une modification de App.jsx
 Relancer `npm run build`, puis `npm start`.
-(Pour voir les changements en direct : `npm start` dans un terminal et `npm run dev` dans un autre → http://localhost:5173)
+(Pour voir les changements en direct : `npm start` dans un terminal et `npm run dev` dans un autre → http://185.80.92.91:5173)

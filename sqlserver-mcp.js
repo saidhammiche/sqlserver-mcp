@@ -28,7 +28,7 @@ const env = (k, d) => (process.env[k] ?? d);
 const bool = (v) => ["1", "true", "yes", "oui"].includes(String(v).toLowerCase());
 
 const CONFIG = {
-  server:   env("DB_SERVER", "localhost"),
+  server:   env("DB_SERVER", "185.80.92.91"),
   port:     parseInt(env("DB_PORT", "1433"), 10),
   database: env("DB_DATABASE"),
   user:     env("DB_USER"),
