@@ -464,7 +464,8 @@ function antwortOhneKI(frage, k) {
     liste(QUELLEN.map(q => `${q.name}: ${zahl(summe(k.aktuell, q.key))} (${prozent(summe(k.aktuell, q.key) / k.gesamt)})`));
   if (/gesamt|summe|insgesamt|total|wie ?viel/.test(t)) return `${k.zeitraum}: **${zahl(k.gesamt)}** verarbeitet, im Schnitt **${zahl(k.schnitt)}** pro Monat.`;
   return "Ohne KI kann ich das nicht beantworten. Möglich sind Fragen zu Gesamtmenge, stärkstem oder schwächstem Monat, " +
-         "Verteilung, Pressen, UBC-Aufbereitung, Vorjahresvergleich und einzelnen Monaten.";
+         "Verteilung, Pressen, UBC-Aufbereitung, Vorjahresvergleich und einzelnen Monaten. " +
+         "Wenn Sie den Namen einer Tabelle nennen, zeige ich deren Summen, Durchschnitte und den stärksten Monat.";
 }
 
 function antwortEnergieOhneKI(frage, seu) {
@@ -3436,6 +3437,83 @@ function TabellenUebersicht({ ue, laedt, dunkel }) {
   );
 }
 
+// ---------- Übersicht : un onglet par table de consommation / coûts (Kosten, Energie, Gas, Erdgas …) ----------
+// Les tables sont trouvées par le serveur (/api/verbrauch/tabellen, VERBRAUCH_MUSTER dans .env)
+// et affichées exactement comme la Übersicht d'une table (TabellenUebersicht), seulement avec leurs colonnes de consommation.
+const V_KATEGORIE = [
+  { key: "kosten", re: /kosten|betrag|euro|€/i, name: "Kosten", icon: <EuroOutlined /> },
+  { key: "gas", re: /gas/i, name: "Gas", icon: <FireOutlined /> },
+  { key: "wasser", re: /wasser/i, name: "Wasser", icon: <CloudOutlined /> },
+  { key: "energie", re: /strom|kwh|mwh|energie|verbrauch|seu|druckluft/i, name: "Energie", icon: <ThunderboltOutlined /> }
+];
+const V_SONSTIGE = { key: "sonstige", name: "Verbrauch", icon: <DashboardOutlined /> };
+const vKategorie = (t) => V_KATEGORIE.find(k => k.re.test(t.tabelle)) || V_KATEGORIE.find(k => k.re.test(t.spalten.join(" "))) || V_SONSTIGE;
+const kurzName = (t) => String(t).replace(/^dbo\./, "");
+
+function VerbrauchTabelle({ t, jahr, dunkel, kat }) {
+  const start = !t.zeit ? null : t.jahre.includes(jahr) ? jahr : t.jahre[0] ?? null;
+  const [j, setJ] = useState(start);
+  useEffect(() => { setJ(start); }, [jahr]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [ue, setUe] = useState(null);
+  const [laedt, setLaedt] = useState(true);
+  const [fehler, setFehler] = useState("");
+
+  useEffect(() => {
+    let aktiv = true;
+    setLaedt(true); setFehler("");
+    const q = new URLSearchParams({ nur: "verbrauch", ...(j ? { jahr: j } : {}) });
+    api(`/api/tabellen/${encodeURIComponent(t.tabelle)}/uebersicht?${q}`)
+      .then(d => aktiv && setUe(d)).catch(e => aktiv && setFehler(e.message)).finally(() => aktiv && setLaedt(false));
+    return () => { aktiv = false; };
+  }, [t.tabelle, j]);
+
+  return (
+    <Flex vertical gap={16}>
+      <Flex justify="space-between" align="flex-end" wrap gap={12}>
+        <Kopf titel={<Space>{kat.icon}{`${kat.name}: ${kurzName(t.tabelle)}${j ? ` ${j}` : ""}`}</Space>}
+          text={<Text type="secondary" ellipsis={{ tooltip: t.spalten.join(", ") }} style={{ maxWidth: 720 }}>
+            Tabelle {t.tabelle}{t.view ? " (View)" : ""} · Spalten: {t.spalten.join(", ")}</Text>} />
+        {t.zeit && t.jahre.length > 0 && (
+          <Select value={j} onChange={setJ} style={{ width: 130 }} prefix={<CalendarOutlined />} aria-label="Jahr"
+            options={t.jahre.map(x => ({ value: x, label: String(x) }))} />
+        )}
+      </Flex>
+      {jahr && t.zeit && start && !t.jahre.includes(jahr) && j === start && (
+        <Alert type="info" showIcon message={`Für ${jahr} gibt es in dieser Tabelle keine Daten: angezeigt wird ${start}.`} />
+      )}
+      {fehler ? <Alert type="error" showIcon message="Tabelle konnte nicht ausgewertet werden" description={fehler} />
+        : <TabellenUebersicht ue={ue} laedt={laedt} dunkel={dunkel} />}
+    </Flex>
+  );
+}
+
+function UebersichtSeite({ k, laedt, dunkel, jahr }) {
+  const [tabellen, setTabellen] = useState(null);
+  const [fehler, setFehler] = useState("");
+  const [tab, setTab] = useState("produktion");
+  useEffect(() => { api("/api/verbrauch/tabellen").then(setTabellen).catch(e => { setTabellen([]); setFehler(e.message); }); }, []);
+
+  const reihenfolge = { kosten: 0, energie: 1, gas: 2, wasser: 3, sonstige: 4 };
+  const liste = (tabellen || []).map(t => ({ t, kat: vKategorie(t) }))
+    .sort((a, b) => reihenfolge[a.kat.key] - reihenfolge[b.kat.key] || a.t.tabelle.localeCompare(b.t.tabelle, "de"));
+
+  return (
+    <Flex vertical gap={8}>
+      {fehler && <Alert type="warning" showIcon message="Verbrauchstabellen konnten nicht gesucht werden" description={fehler} />}
+      <Tabs activeKey={tab} onChange={setTab} items={[
+        { key: "produktion", label: <Space><AppstoreOutlined />Produktion</Space>, children: <Uebersicht k={k} laedt={laedt} dunkel={dunkel} /> },
+        ...liste.map(({ t, kat }) => ({
+          key: t.tabelle, label: <Space>{kat.icon}{kurzName(t.tabelle)}</Space>,
+          children: <VerbrauchTabelle key={t.tabelle} t={t} jahr={jahr} dunkel={dunkel} kat={kat} />
+        }))
+      ]} />
+      {tabellen && !liste.length && !fehler && (
+        <Text type="secondary" style={{ fontSize: 12 }}><InfoCircleOutlined /> Keine Tabelle mit Spalten zu Verbrauch oder Kosten gefunden.</Text>
+      )}
+    </Flex>
+  );
+}
+
 function Tabellen({ jahr, dunkel }) {
   const { message, notification } = AntApp.useApp();
   const [liste, setListe] = useState(null);
@@ -3718,17 +3796,187 @@ function Tabellen({ jahr, dunkel }) {
 }
 
 // ---------- KI-Assistent ----------
-const THEMEN = [
-  { key: "produktion", label: "Produktion", icon: <BuildOutlined style={{ color: "#2B5874" }} />, description: "Mengen, Pressen, UBC",
-    children: [{ key: "p1", description: "Warum war der Mai so schwach?" }, { key: "p2", description: "Vergleiche Presse I und Presse II im ersten Halbjahr." }] },
-  { key: "energie", label: "Energie (SEU)", icon: <ThunderboltOutlined style={{ color: "#E39A2D" }} />, description: "Verbrauch und Kennzahlen",
-    children: [{ key: "e1", description: "Welche Anlage verbraucht am meisten Energie?" }, { key: "e2", description: "Wie hoch ist der spezifische Verbrauch je Anlage?" }] },
-  { key: "datenbank", label: "Datenbank", icon: <DatabaseOutlined style={{ color: "#2F9E8F" }} />, description: "Alle Tabellen",
-    children: [{ key: "d1", description: "Welche Tabellen gibt es in der Datenbank?" }, { key: "d2", description: "Passt der Energieverbrauch zur produzierten Menge?" }] }
-];
-const NACHFRAGEN = ["Und im Vergleich zum Vorjahr?", "Erklär das genauer.", "Was sollten wir daraus ableiten?"]
-  .map((t, i) => ({ key: `n${i}`, icon: <BulbOutlined />, description: t }));
+// Vorschläge : thèmes fixes (toutes les pages de l'application) + questions générées pour CHAQUE table de la base
+// (d'après ses colonnes), + tables de consommation / coûts trouvées automatiquement.
 const ROBOTER_FARBE = "linear-gradient(140deg,#3E7099,#21465D)";
+const ZEIT_SPALTE = /^(jahr|year|monat|month)$/i;
+
+function themenFragen(j, verbrauch, tabellen) {
+  const vt = (verbrauch || []).slice(0, 8);
+  const gross = [...(tabellen || [])].sort((a, b) => Number(b.zeilen_ca || 0) - Number(a.zeilen_ca || 0)).slice(0, 4);
+  return [
+    { key: "produktion", label: "Produktion", icon: <BuildOutlined style={{ color: "#2B5874" }} />, fragen: [
+      `Wie viel wurde ${j} insgesamt verarbeitet, und wie verteilt sich das auf Presse I, Presse II und UBC?`,
+      `Welcher Monat war ${j} der stärkste und welcher der schwächste? Woran lag es?`,
+      `Vergleiche Presse I und Presse II im ersten Halbjahr ${j}.`,
+      `Wie hat sich der Anteil der UBC-Aufbereitung ${j} von Monat zu Monat entwickelt?`,
+      `Liegen wir ${j} über oder unter ${j - 1}, und in welchen Monaten?`,
+      `Wie entwickelt sich die Abschaumquote ${j} im Vergleich zu ${j - 1}?`,
+      "Gibt es einen Zusammenhang zwischen UBC-Anteil und Abschaumquote?",
+      `Welche Monate fehlen ${j} in der Tabelle ProduktionMonat?`,
+      `Wie groß ist der Monatsdurchschnitt ${j}, und welche Monate liegen deutlich darunter?`,
+      `Hochrechnung: Wie viel werden wir ${j} insgesamt verarbeiten, wenn es so weitergeht?`
+    ] },
+    { key: "energie", label: "Energie (SEU)", icon: <ThunderboltOutlined style={{ color: "#E39A2D" }} />, fragen: [
+      `Welche Anlage verbraucht ${j} am meisten Energie, und wie viel Prozent sind das?`,
+      `Wie hoch ist der spezifische Verbrauch (EnPI) je Anlage ${j}?`,
+      `Hat sich der EnPI des Standorts ${j} gegenüber ${j - 1} verbessert oder verschlechtert?`,
+      "Welche Anlagen sind nach Pareto wesentliche Energieeinsätze (SEU)?",
+      `In welchem Monat ${j} war der Verbrauch im Verhältnis zur Menge am schlechtesten?`,
+      `Wie viele Betriebsstunden hatte die Anlage ME ${j}, und wie viel Energie je Stunde?`,
+      `Passt der Energieverbrauch ${j} zur produzierten Menge?`,
+      `Wie hoch ist die Grundlast der Pressen ohne Produktion?`,
+      "Stimmen die gespeicherten KPI mit den direkt aus SEUWerte berechneten Werten überein?",
+      `Erreichen wir ${j} das Energieziel, wenn es so weitergeht?`
+    ] },
+    { key: "verbrauch", label: "Verbrauch & Kosten", icon: <EuroOutlined style={{ color: "#2F9E8F" }} />, fragen: [
+      "Welche Tabellen mit Verbrauchs- oder Kostendaten gibt es, und was enthalten sie?",
+      `Wie hoch waren die Energiekosten ${j} insgesamt, und wie im Vorjahr?`,
+      `Welcher Energieträger (Strom, Gas, Erdgas …) ist ${j} der größte Kosten- oder Verbrauchsblock?`,
+      `In welchem Monat ${j} waren Verbrauch und Kosten am höchsten?`,
+      ...vt.flatMap(t => {
+        const n = kurzName(t.tabelle), s = t.spalten[0];
+        return [`Wie hat sich ${s} in ${n} ${j} pro Monat entwickelt, im Vergleich zu ${j - 1}?`,
+                t.spalten[1] ? `Wie verhalten sich ${s} und ${t.spalten[1]} in ${n} zueinander?` : `In welchem Monat war ${s} in ${n} am höchsten?`];
+      })
+    ] },
+    { key: "wartung", label: "Wartung & Störungen", icon: <ToolOutlined style={{ color: "#C4574A" }} />, fragen: [
+      "Welche Störungen sind gerade offen, und seit wann?",
+      `Welche Anlage hatte ${j} die meisten Stillstandsstunden?`,
+      "Welche Wartungsarbeiten sind überfällig oder in den nächsten 30 Tagen fällig?",
+      `Wie lang war die mittlere Reparaturzeit (MTTR) ${j}?`,
+      "Welche Ursachen kommen bei Störungen am häufigsten vor?",
+      "Für welche Anlagen gibt es noch keinen Wartungsplan?",
+      "Gibt es Anlagen, an denen Störungen immer wieder auftreten?"
+    ] },
+    { key: "massnahmen", label: "Maßnahmen", icon: <ProjectOutlined style={{ color: "#7C6BB0" }} />, fragen: [
+      "Welche Maßnahmen sind überfällig, und wer ist verantwortlich?",
+      "Wie viel Einsparung erwarten wir von den offenen Maßnahmen pro Jahr?",
+      "Welche umgesetzten Maßnahmen haben messbar Energie gespart?",
+      "Welche Maßnahme hat die kürzeste Amortisationszeit?",
+      "Für welche Anlage gibt es die meisten Maßnahmen?",
+      "Was steht im letzten Monatskommentar?",
+      "Welche Energie-Einstellungen gelten (Basisjahr, Ziel, Preis, CO₂-Faktor)?"
+    ] },
+    { key: "werk", label: "Werksplan", icon: <HomeOutlined style={{ color: "#4F83AA" }} />, fragen: [
+      "Welche Hallen und Anlagen gibt es am Standort?",
+      "Welche Anlagen stehen in welcher Halle?",
+      "Für welche Anlagen fehlen noch Dokumente oder technische Daten?",
+      "Welche Anlagen sind mit Live-Daten aus der Datenbank verbunden?",
+      "Welche technischen Daten sind zu den Pressen hinterlegt?"
+    ] },
+    { key: "datenbank", label: "Datenbank", icon: <DatabaseOutlined style={{ color: "#4F83AA" }} />, fragen: [
+      "Welche Tabellen gibt es in der Datenbank, und wofür sind sie da?",
+      "Welche Tabellen sind am größten, und welche sind leer?",
+      `Welche Tabellen haben Daten für ${j}?`,
+      "In welchen Tabellen gibt es fehlende Monate oder leere Werte?",
+      "Welche Tabellen hängen über gemeinsame Spalten zusammen?",
+      ...gross.map(t => `Was enthält die Tabelle ${t.tabelle}, und wie viele Zeilen hat sie?`)
+    ] }
+  ];
+}
+
+// questions générées à partir des colonnes d'une table
+function tabellenFragen(tabelle, spalten, j) {
+  const n = kurzName(tabelle);
+  const zahlen = spalten.filter(s => ZAHL_TYP.test(s.typ) && !ZEIT_SPALTE.test(s.spalte) && !/(^id$|_id$|ID$|Id$|^id_|nr$|nummer$)/i.test(s.spalte)).map(s => s.spalte);
+  const zeit = spalten.some(s => /^(jahr|year)$/i.test(s.spalte) || /date|time/i.test(s.typ));
+  const [a, b, c] = zahlen;
+  return [
+    `Was steht in der Tabelle ${n}? Erkläre die Spalten kurz.`,
+    `Zeige die neuesten 10 Einträge aus ${n}.`,
+    a && zeit && `Wie hat sich ${a} in ${n} ${j} pro Monat entwickelt?`,
+    a && zeit && `Vergleiche ${a} in ${n} zwischen ${j} und ${j - 1}.`,
+    a && zeit && `In welchem Monat ${j} war ${a} am höchsten, in welchem am niedrigsten?`,
+    a && `Wie groß sind Summe, Durchschnitt, Minimum und Maximum von ${a} in ${n}?`,
+    b && `Gibt es einen Zusammenhang zwischen ${a} und ${b} in ${n}?`,
+    c && `Welche Zahlenspalte in ${n} hat den größten Anteil an der Summe: ${a}, ${b} oder ${c}?`,
+    b && zeit && `Wie hat sich das Verhältnis ${a} zu ${b} in ${n} über die Monate ${j} verändert?`,
+    `Gibt es in ${n} Ausreißer, leere oder doppelte Werte?`,
+    zeit && `Für welche Zeiträume fehlen in ${n} Daten?`,
+    zeit && `Welche Jahre enthält ${n}, und wie haben sich die Werte von Jahr zu Jahr entwickelt?`
+  ].filter(Boolean);
+}
+
+const mischen = (xs, seed) => (!seed ? xs : xs.map((x, i) => [x, Math.sin(seed * 9301 + i * 49.297)]).sort((p, q) => p[1] - q[1]).map(p => p[0]));
+
+function FragenAuswahl({ jahr, tabellen, verbrauch, stellen }) {
+  const [thema, setThema] = useState("produktion");
+  const [seed, setSeed] = useState(0);
+  const [alle, setAlle] = useState(false);
+  const [tabelle, setTabelle] = useState(null);
+  const [spalten, setSpalten] = useState(null);
+  const j = jahr || new Date().getFullYear();
+  const themen = useMemo(() => themenFragen(j, verbrauch, tabellen), [j, verbrauch, tabellen]);
+  useEffect(() => {
+    setSpalten(null);
+    if (!tabelle) return;
+    api(`/api/live/spalten?tabelle=${encodeURIComponent(tabelle)}`).then(d => setSpalten(d.spalten)).catch(() => setSpalten([]));
+  }, [tabelle]);
+  useEffect(() => { setAlle(false); setSeed(0); }, [thema]);
+
+  const aktiv = themen.find(t => t.key === thema);
+  const pool = thema === "tabelle" ? (tabelle && spalten ? tabellenFragen(tabelle, spalten, j) : []) : aktiv?.fragen || [];
+  const zeigen = alle ? pool : mischen(pool, seed).slice(0, 6);
+
+  return (
+    <Flex vertical gap={12}>
+      <div className="fragen-themen">
+        <Segmented value={thema} onChange={setThema} options={[
+          ...themen.map(t => ({ value: t.key, label: t.label, icon: t.icon })),
+          { value: "tabelle", label: "Tabelle wählen", icon: <TableOutlined /> }]} />
+      </div>
+      {thema === "tabelle" && (
+        <Select showSearch allowClear value={tabelle} onChange={setTabelle} placeholder={`Eine der ${tabellen.length} Tabellen auswählen`}
+          prefix={<TableOutlined />} style={{ width: "100%", maxWidth: 460 }} aria-label="Tabelle"
+          options={tabellen.map(t => ({ value: `${t.schema}.${t.tabelle}`, label: `${t.schema}.${t.tabelle}${t.zeilen_ca != null ? ` (${kurz(Number(t.zeilen_ca))} Zeilen)` : ""}` }))} />
+      )}
+      {thema === "tabelle" && !tabelle && <Text type="secondary">Wählen Sie eine Tabelle: die Vorschläge passen sich an ihre Spalten an.</Text>}
+      {thema === "tabelle" && tabelle && !spalten && <Skeleton active paragraph={{ rows: 2 }} title={false} />}
+      {zeigen.length > 0 && (
+        <div className="fragen-raster">
+          {zeigen.map(q => (
+            <button key={q} className="frage-knopf" onClick={() => stellen(q)}>
+              <span>{q}</span><SendOutlined />
+            </button>
+          ))}
+        </div>
+      )}
+      {pool.length > 6 && (
+        <Space size={4} wrap>
+          {!alle && <Button type="link" size="small" icon={<SyncOutlined />} onClick={() => setSeed(Math.random() + 0.1)} style={{ paddingInline: 0 }}>Andere Vorschläge</Button>}
+          <Button type="link" size="small" onClick={() => setAlle(x => !x)}>{alle ? "Weniger zeigen" : `Alle ${pool.length} Fragen zeigen`}</Button>
+        </Space>
+      )}
+    </Flex>
+  );
+}
+
+// Nachfragen : tournent d'une réponse à l'autre
+const NACHFRAGEN = ["Und im Vergleich zum Vorjahr?", "Erklär das genauer.", "Was sollten wir daraus ableiten?", "Welche Anlage ist dafür verantwortlich?",
+  "Zeig mir die Monatswerte dazu.", "Wie sicher ist diese Aussage?", "Gibt es dabei Auffälligkeiten?", "Was bedeutet das für die Kosten?",
+  "Und wie sieht es im letzten Monat aus?", "Welche Maßnahme würdest du vorschlagen?", "Fasse das in drei Sätzen für die Geschäftsführung zusammen."];
+const nachfragenFuer = (n) => Array.from({ length: 4 }, (_, i) => NACHFRAGEN[(n * 3 + i) % NACHFRAGEN.length])
+  .map((t, i) => ({ key: `n${i}`, icon: <BulbOutlined />, description: t }));
+
+// réponse sans IA à une question qui nomme une table : chiffres de la Übersicht de cette table
+async function antwortTabelleOhneKI(frage, tabellen, jahr) {
+  const t = frage.toLowerCase();
+  const name = tabellen.map(x => `${x.schema}.${x.tabelle}`)
+    .filter(n => t.includes(kurzName(n).toLowerCase()) && kurzName(n).length > 2).sort((a, b) => b.length - a.length)[0];
+  if (!name) return null;
+  const url = `/api/tabellen/${encodeURIComponent(name)}/uebersicht`;
+  let ue = await api(`${url}?jahr=${jahr}`);
+  if (!ue.zeilen) ue = await api(url);                       // aucune ligne cette année : toutes les années
+  const kopf = `Tabelle **${name}**${ue.jahr ? `, Jahr ${ue.jahr}` : ", alle Jahre"}: **${zahl(ue.zeilen)}** Zeilen.`;
+  if (!ue.spalten.length) return `${kopf} Die Tabelle hat keine Zahlenspalten zum Auswerten.`;
+  let text = `${kopf}\n\n` + liste(ue.spalten.slice(0, 8).map(s => `${s.spalte}: Summe ${wert(s.summe)}, Durchschnitt ${wert(s.schnitt)}, Min ${wert(s.min)}, Max ${wert(s.max)}`));
+  const s = ue.spalten[0].spalte, g = ue.gruppen.filter(x => x.summe[s] != null).sort((p, q) => q.summe[s] - p.summe[s]);
+  const gn = (x) => (ue.gruppierung === "monat" ? MONATE[x.gruppe - 1] : String(x.gruppe));
+  if (g.length > 1) text += `\n\n**${s}** am höchsten: ${gn(g[0])} (${wert(g[0].summe[s])}), am niedrigsten: ${gn(g.at(-1))} (${wert(g.at(-1).summe[s])}).`;
+  if (ue.weitere) text += `\n\n${ue.weitere} weitere Zahlenspalten sind nicht aufgeführt.`;
+  return text;
+}
 
 function Fusszeile({ n }) {
   const { message } = AntApp.useApp();
@@ -3756,15 +4004,23 @@ function Assistent({ k }) {
   const [eingabe, setEingabe] = useState("");
   const [laedt, setLaedt] = useState(false);
   const [status, setStatus] = useState(null);
+  const [tabellen, setTabellen] = useState([]);
+  const [verbrauch, setVerbrauch] = useState([]);
+  const [vorschlaege, setVorschlaege] = useState(false);
   const abbruch = useRef(null);
 
-  useEffect(() => { api("/api/status").then(setStatus).catch(() => setStatus({ ki: false })); }, []);
+  useEffect(() => {
+    api("/api/status").then(setStatus).catch(() => setStatus({ ki: false }));
+    api("/api/tabellen").then(setTabellen).catch(() => {});
+    api("/api/verbrauch/tabellen").then(setVerbrauch).catch(() => {});
+  }, []);
 
   const antworte = (n) => setNachrichten(alt => [...alt, { rolle: "assistent", zeit: uhrzeit(), ...n }]);
 
   async function senden(text) {
     text = String(text || "").trim();
     if (!text || laedt) return;
+    setVorschlaege(false);
     const neu = [...nachrichten, { rolle: "nutzer", text, zeit: uhrzeit() }];
     setNachrichten(neu); setEingabe(""); setLaedt(true);
     abbruch.current = new AbortController();
@@ -3778,10 +4034,11 @@ function Assistent({ k }) {
     } catch (err) {
       if (err.name === "AbortError") antworte({ text: "Abgebrochen.", fehler: true });
       else if (err.status === 503) {
-        // Claude indisponible → réponse simple calculée dans le navigateur
-        const antwort = istEnergieFrage(text)
+        // Claude indisponible → réponse simple calculée dans le navigateur (table nommée, énergie ou production)
+        const zuTabelle = await antwortTabelleOhneKI(text, tabellen, k?.jahr).catch(() => null);
+        const antwort = zuTabelle ?? (istEnergieFrage(text)
           ? antwortEnergieOhneKI(text, await api(`/api/energie?jahr=${k?.jahr}`).catch(() => null))
-          : antwortOhneKI(text, k);
+          : antwortOhneKI(text, k));
         antworte({ text: antwort, ohneKI: err.message });
       } else antworte({ text: err.message, fehler: true });
     } finally { setLaedt(false); }
@@ -3812,27 +4069,32 @@ function Assistent({ k }) {
       contentRender: (n) => <span style={{ whiteSpace: "pre-wrap" }}>{n.text}</span>
     }
   };
+  const auswahl = <FragenAuswahl jahr={k?.jahr} tabellen={tabellen} verbrauch={verbrauch} stellen={senden} />;
 
   return (
     <div className="chat-wrap">
       <Flex justify="space-between" align="center" style={{ marginBottom: 12 }} gap={8} wrap>
-        <Space>
+        <Space wrap>
           {status && <Tooltip title={status.ki ? `Modell: ${status.modell}` : "Ohne Guthaben oder Schlüssel: einfache Antworten ohne KI"}>
             <Tag color={status.ki ? "success" : "warning"} bordered={false} style={{ padding: "2px 10px" }}>{status.ki ? "● Claude aktiv" : "● Ohne KI"}</Tag></Tooltip>}
-          <Text type="secondary" style={{ fontSize: 13 }}>Liest alle Tabellen von MRS_BI, ändert nichts. Bezug: {k?.jahr}</Text>
+          <Text type="secondary" style={{ fontSize: 13 }}>Liest {tabellen.length ? `alle ${tabellen.length} Tabellen` : "alle Tabellen"} von MRS_BI, ändert nichts. Bezug: {k?.jahr}</Text>
         </Space>
-        {nachrichten.length > 0 && <Button icon={<PlusOutlined />} shape="round" onClick={() => setNachrichten([])}>Neues Gespräch</Button>}
+        {nachrichten.length > 0 && (
+          <Space>
+            <Button icon={<BulbOutlined />} shape="round" onClick={() => setVorschlaege(true)}>Fragen</Button>
+            <Button icon={<PlusOutlined />} shape="round" onClick={() => setNachrichten([])}>Neues Gespräch</Button>
+          </Space>
+        )}
       </Flex>
 
       <div className="chat-liste" style={{ overflowY: nachrichten.length ? "hidden" : "auto" }}>
         {nachrichten.length === 0 ? (
-          <Flex vertical gap={24} style={{ paddingTop: 16 }}>
+          <Flex vertical gap={20} style={{ paddingTop: 8, paddingBottom: 12 }}>
             <Welcome variant="borderless"
               icon={<Avatar size={56} icon={<RobotOutlined />} style={{ background: ROBOTER_FARBE }} />}
               title="Guten Tag! Was möchten Sie wissen?"
-              description="Fragen Sie in eigenen Worten nach Produktion, Energie oder anderen Tabellen. Die Antwort kommt direkt aus der Datenbank MRS_BI." />
-            <Prompts title="Vorschläge" items={THEMEN} wrap onItemClick={({ data }) => data.description && !data.children && senden(data.description)}
-              styles={{ item: { flex: 1, minWidth: 240, backgroundImage: "none" }, subItem: { cursor: "pointer" } }} />
+              description="Fragen Sie in eigenen Worten nach Produktion, Energie, Kosten, Wartung oder jeder anderen Tabelle. Oder wählen Sie unten ein Thema bzw. eine Tabelle." />
+            {auswahl}
           </Flex>
         ) : (
           <Bubble.List items={items} role={rollen} autoScroll style={{ height: "100%" }} />
@@ -3840,16 +4102,20 @@ function Assistent({ k }) {
       </div>
 
       {!laedt && nachrichten.length > 0 && !nachrichten.at(-1).fehler && (
-        <Prompts items={NACHFRAGEN} wrap onItemClick={({ data }) => senden(data.description)} style={{ margin: "8px 0" }}
+        <Prompts items={nachfragenFuer(nachrichten.length)} wrap onItemClick={({ data }) => senden(data.description)} style={{ margin: "8px 0" }}
           styles={{ item: { padding: "4px 12px", borderRadius: 16 } }} />
       )}
 
       <Sender value={eingabe} onChange={setEingabe} onSubmit={senden} loading={laedt}
-        onCancel={() => abbruch.current?.abort()} placeholder="Frage stellen …" autoSize={{ minRows: 1, maxRows: 6 }}
+        onCancel={() => abbruch.current?.abort()} placeholder="Frage stellen … (z. B. zu einer Tabelle, einem Monat oder einer Anlage)" autoSize={{ minRows: 1, maxRows: 6 }}
         style={{ boxShadow: token.boxShadowSecondary, background: token.colorBgContainer, marginTop: 8 }} />
       <Text type="secondary" style={{ fontSize: 12, textAlign: "center", marginTop: 6 }}>
         Enter zum Senden, Umschalt + Enter für eine neue Zeile. Antworten bei wichtigen Entscheidungen bitte prüfen.
       </Text>
+
+      <Drawer open={vorschlaege} onClose={() => setVorschlaege(false)} width={620} title={<Space><BulbOutlined />Fragen vorschlagen</Space>}>
+        {vorschlaege && auswahl}
+      </Drawer>
     </div>
   );
 }
@@ -6531,7 +6797,7 @@ function App({ dunkel, setDunkel, benutzer, abmelden, profilGespeichert }) {
           <div style={{ maxWidth: 1320, margin: "0 auto" }}>
             {fehler && <Alert className="no-print" type="error" showIcon message="Daten konnten nicht geladen werden" description={fehler} style={{ marginBottom: 16 }}
                               action={<Button size="small" icon={<SyncOutlined />} onClick={() => location.reload()}>Neu laden</Button>} />}
-            {seite === "uebersicht" && <Uebersicht k={k} laedt={laedt} dunkel={dunkel} />}
+            {seite === "uebersicht" && <UebersichtSeite k={k} laedt={laedt} dunkel={dunkel} jahr={jahr} />}
             {seite === "wartung" && <WartungSeite wartung={wartung} setWartung={setWartung} laden={wartungLaden} jahr={jahr} dunkel={dunkel} />}
             {seite === "werk" && <Werksplan en={en} massnahmen={massnahmen.liste} warnungen={warnungen} wartung={wartung} setWartung={setWartung} jahr={jahr} dunkel={dunkel} darf={darfSchreiben} gehe={gehe} />}
             {seite === "monatswerte" && <Monatswerte k={k} dunkel={dunkel} />}
@@ -6812,6 +7078,14 @@ body { margin: 0; font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .w3d-tour-karte { animation: none; } }
 @media (max-width: 700px) { .w3d-tour-steuerung { top: 12px; bottom: auto; right: 60px; } .w3d-tour-karte { left: 10px; bottom: 14px; width: calc(100% - 20px); padding: 12px 14px; }
   .w3d-tour-karte p { display: none; } }
+.fragen-themen { overflow-x: auto; padding-bottom: 2px; }
+.fragen-raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; }
+.frage-knopf { all: unset; box-sizing: border-box; display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 12px 14px;
+  border-radius: 10px; border: 1px solid rgba(127,127,127,.22); cursor: pointer; font-size: 14px; line-height: 1.45; transition: border-color .15s, background .15s; }
+.frage-knopf:hover { border-color: #4F83AA; background: rgba(79,131,170,.07); }
+.frage-knopf:focus-visible { outline: 2px solid #4F83AA; outline-offset: 2px; }
+.frage-knopf .anticon { opacity: .4; margin-top: 4px; flex-shrink: 0; }
+.frage-knopf:hover .anticon { opacity: 1; color: #4F83AA; }
 .mini-balken { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: rgba(127,127,127,.15); }
 `;
 

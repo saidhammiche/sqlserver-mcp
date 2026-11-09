@@ -281,6 +281,9 @@ async function tabelleBeschreiben(name) {
 // 2) sinon la première colonne date → YEAR(...) et MONTH(...)
 const ZAHL_TYPEN = ["int", "bigint", "smallint", "tinyint", "decimal", "numeric", "money", "float", "real"];
 const DATUM_TYPEN = ["date", "datetime", "datetime2", "smalldatetime"];
+// Colonnes de consommation / coûts (Übersicht : un onglet par table). Modifiable avec VERBRAUCH_MUSTER dans .env
+const VERBRAUCH_MUSTER = new RegExp(env("VERBRAUCH_MUSTER",
+  "verbrauch|kosten|energie|strom|gas|kwh|mwh|wasser|diesel|heiz|öl|oel|druckluft|betrag|euro|co2"), "i");
 
 function zeitSpalten(spalten) {
   const finde = (re) => spalten.find(s => re.test(s.spalte) && ZAHL_TYPEN.includes(s.typ));
@@ -328,16 +331,18 @@ async function tabellenVorschau(name, limit = 200, jahr = null, monat = null) {
 
 // Übersicht d'une table : totaux, moyennes, min, max des colonnes numériques,
 // regroupés par mois (si une année est choisie) ou par année (toutes les années)
+// nurVerbrauch = true : seulement les colonnes de consommation / coûts (VERBRAUCH_MUSTER)
 const istKennung = (n) => /^id$/i.test(n) || /^id_/i.test(n) || /(_id|ID|Id)$/.test(n) || /(nr|nummer)$/i.test(n);
 
-async function tabellenUebersicht(name, jahr = null, monat = null) {
+async function tabellenUebersicht(name, jahr = null, monat = null, nurVerbrauch = false) {
   const struktur = await tabelleBeschreiben(name);
   const [schema, table] = teileName(name);
   const ziel = `${qi(schema)}.${qi(table)}`;
   const zeit = zeitSpalten(struktur.spalten);
   const a = zeitAusdruck(zeit);
   const zeitNamen = new Set([zeit?.jahr, zeit?.monat].filter(Boolean));
-  const alleZahlen = struktur.spalten.filter(s => ZAHL_TYPEN.includes(s.typ) && !zeitNamen.has(s.spalte) && !istKennung(s.spalte));
+  const alleZahlen = struktur.spalten.filter(s => ZAHL_TYPEN.includes(s.typ) && !zeitNamen.has(s.spalte) && !istKennung(s.spalte)
+    && (!nurVerbrauch || VERBRAUCH_MUSTER.test(s.spalte)));
   const zahlen = alleZahlen.slice(0, 30);
 
   const f = (s) => `CAST(${qi(s.spalte)} AS float)`;
@@ -370,6 +375,42 @@ async function tabellenUebersicht(name, jahr = null, monat = null) {
       gruppen
     };
   });
+}
+
+// Toutes les tables avec des colonnes de consommation / coûts (gardé 5 minutes en mémoire)
+let verbrauchCache = null;
+async function verbrauchsTabellen() {
+  if (verbrauchCache && Date.now() - verbrauchCache.t < 5 * 60000) return verbrauchCache.liste;
+  const r = await (await pool()).request().query(`
+    SELECT c.TABLE_SCHEMA AS [schema], c.TABLE_NAME AS tabelle, c.COLUMN_NAME AS spalte, c.DATA_TYPE AS typ, t.TABLE_TYPE AS art
+    FROM INFORMATION_SCHEMA.COLUMNS c
+    JOIN INFORMATION_SCHEMA.TABLES t ON t.TABLE_SCHEMA = c.TABLE_SCHEMA AND t.TABLE_NAME = c.TABLE_NAME
+    ORDER BY c.TABLE_SCHEMA, c.TABLE_NAME, c.ORDINAL_POSITION`);
+  const proTabelle = new Map();
+  for (const z of r.recordset) {
+    const key = `${z.schema}.${z.tabelle}`;
+    if (!proTabelle.has(key)) proTabelle.set(key, { schema: z.schema, table: z.tabelle, tabelle: key, view: z.art === "VIEW", spalten: [] });
+    proTabelle.get(key).spalten.push({ spalte: z.spalte, typ: z.typ });
+  }
+  const liste = [];
+  for (const t of proTabelle.values()) {
+    const zeit = zeitSpalten(t.spalten);
+    const zeitNamen = new Set([zeit?.jahr, zeit?.monat].filter(Boolean));
+    const treffer = t.spalten.filter(s => ZAHL_TYPEN.includes(s.typ) && !zeitNamen.has(s.spalte) && !istKennung(s.spalte) && VERBRAUCH_MUSTER.test(s.spalte));
+    if (!treffer.length) continue;
+    let jahre = [];
+    if (zeit) {
+      try {
+        const a = zeitAusdruck(zeit);
+        jahre = await nurLesen(async (tx) => (await new sql.Request(tx).query(
+          `SELECT DISTINCT ${a.jahr} AS j FROM ${qi(t.schema)}.${qi(t.table)} WHERE ${a.jahr} IS NOT NULL ORDER BY j DESC`))
+          .recordset.map(x => Number(x.j)).filter(Number.isFinite));
+      } catch (err) { console.warn(`[Verbrauch] ${t.tabelle}:`, err.message); }
+    }
+    liste.push({ tabelle: t.tabelle, view: t.view, zeit, spalten: treffer.map(s => s.spalte), jahre });
+  }
+  verbrauchCache = { t: Date.now(), liste };
+  return liste;
 }
 
 // ---------------------------------------------------------------------
@@ -793,7 +834,44 @@ const WERKZEUGE = [
   { name: "tabellen_auflisten", description: "Listet alle Tabellen der Datenbank MRS_BI.",
     input_schema: { type: "object", properties: {} }, run: () => tabellenListe() },
   { name: "tabelle_beschreiben", description: "Zeigt die Spalten einer Tabelle.",
-    input_schema: { type: "object", properties: { tabelle: { type: "string" } }, required: ["tabelle"] }, run: (a) => tabelleBeschreiben(a.tabelle) }
+    input_schema: { type: "object", properties: { tabelle: { type: "string" } }, required: ["tabelle"] }, run: (a) => tabelleBeschreiben(a.tabelle) },
+  { name: "tabelle_auswerten", description: "Fertige Kennzahlen einer BELIEBIGEN Tabelle: Zeilenzahl sowie Summe, Durchschnitt, Minimum und Maximum je Zahlenspalte, " +
+      "dazu die Werte je Monat (wenn ein Jahr angegeben ist) bzw. je Jahr (ohne Jahr) und dieselben Monate des Vorjahres. Die Jahr-/Monats- oder Datumsspalte wird " +
+      "automatisch erkannt. Für Summen, Entwicklung, stärksten/schwächsten Monat, Anteile oder Vorjahresvergleich einer Tabelle zuerst dieses Werkzeug benutzen.",
+    input_schema: { type: "object", properties: {
+      tabelle: { type: "string", description: "z. B. dbo.SEUWerte" }, jahr: { type: "integer" }, monat: { type: "integer", description: "1 bis 12, optional" },
+      nur_verbrauch: { type: "boolean", description: "true = nur Verbrauchs- und Kostenspalten" } }, required: ["tabelle"] },
+    run: (a) => tabellenUebersicht(a.tabelle, zahlParam(a.jahr, 1900, 2100), zahlParam(a.monat, 1, 12), !!a.nur_verbrauch) },
+  { name: "tabelle_zeilen", description: "Die neuesten Zeilen einer Tabelle (höchstens 50), optional gefiltert nach Jahr und Monat, mit Gesamtzahl und vorhandenen Jahren.",
+    input_schema: { type: "object", properties: { tabelle: { type: "string" }, anzahl: { type: "integer", description: "Standard 10, höchstens 50" },
+      jahr: { type: "integer" }, monat: { type: "integer" } }, required: ["tabelle"] },
+    run: async (a) => {
+      const d = await tabellenVorschau(a.tabelle, Math.min(50, Math.max(1, parseInt(a.anzahl, 10) || 10)), zahlParam(a.jahr, 1900, 2100), zahlParam(a.monat, 1, 12));
+      return { tabelle: d.tabelle, zeilen_gesamt: d.zeilen_gesamt, zeitspalten: d.zeit, jahre: d.jahre, zeilen: d.zeilen };
+    } },
+  { name: "verbrauchs_tabellen", description: "Listet alle Tabellen mit Verbrauchs- oder Kostenspalten (Strom, Gas, Erdgas, Wasser, Energie, Kosten …), " +
+      "jeweils mit diesen Spalten und den vorhandenen Jahren.",
+    input_schema: { type: "object", properties: {} }, run: () => verbrauchsTabellen() },
+  { name: "wartung_stoerungen", description: "Wartungspläne (Anlage, Aufgabe, Intervall, zuletzt, nächste Fälligkeit, Verantwortlich, Historie) und Störungen " +
+      "(Anlage, Stillstand oder eingeschränkt, Beginn, Ende, offen, Dauer in Stunden, Ursache, Behebung) aus der Anwendung.",
+    input_schema: { type: "object", properties: {} }, run: () => {
+      const w = wartungLesen(), namen = Object.fromEntries(anlagenLesen().map(x => [x.id, x.name]));
+      return {
+        heute: heuteISO(),
+        plaene: w.plaene.map(p => ({ ...p, anlage: namen[p.anlage] ?? p.anlage, naechste: wNaechste(p), historie: (p.historie || []).slice(0, 10) })),
+        stoerungen: w.stoerungen.slice(0, 200).map(x => ({ ...x, anlage: namen[x.anlage] ?? x.anlage, offen: !x.ende,
+          dauer_stunden: Math.round(((x.ende ? new Date(x.ende) : new Date()) - new Date(x.beginn)) / 36000) / 100 }))
+      };
+    } },
+  { name: "werksplan", description: "Hallen und Anlagen des Standorts (Werksplan 3D): Name, Typ, Halle, verknüpfte Energiedaten (SEU P1/P2/UB/ME), " +
+      "Beschreibung, technische Daten, Notizen, Namen der hinterlegten Dokumente, Links und Live-Datenquelle.",
+    input_schema: { type: "object", properties: {} }, run: () => anlagenLesen().map(a => ({
+      id: a.id, name: a.name, typ: a.typ, halle: a.halle, seu: a.seu, beschreibung: a.beschreibung, daten: a.daten, notizen: a.notizen,
+      dokumente: (a.dokumente || []).map(d => d.name), links: (a.links || []).map(l => l.titel || l.url), live_tabelle: a.live?.tabelle ?? null })) },
+  { name: "monatskommentare", description: "Gespeicherte Monatskommentare für die Geschäftsführung (Schlüssel JJJJ-MM, Text, Verfasser, Datum).",
+    input_schema: { type: "object", properties: {} }, run: () => kommentareLesen() },
+  { name: "energie_einstellungen", description: "Energie-Einstellungen der Anwendung: Basisjahr, Ziel (EnPI-Verbesserung in %), CO₂-Faktor (kg je Einheit), Energiepreis (€ je Einheit).",
+    input_schema: { type: "object", properties: {} }, run: () => einstellungenLesen().energie || {} }
 ];
 
 const systemPrompt = (jahr) => `Du bist der Datenassistent der Produktion der Firma MRS (Aluminium-Recycling).
@@ -833,7 +911,16 @@ Regeln:
 - Antworte auf Deutsch, kurz und klar. Zahlen im deutschen Format (1.234.567).
 - Keine Markdown-Tabellen oder Überschriften; kurze Absätze und Aufzählungen mit "- ".
 - Für Ursachen ("warum") vergleiche die Quellen mit ihrem Durchschnitt und sag klar, was die Daten zeigen und was nicht.
-- Wenn die Daten eine Frage nicht beantworten können, sag das ehrlich.`;
+- Wenn die Daten eine Frage nicht beantworten können, sag das ehrlich.
+
+Fragen zu ALLEN Tabellen und zur Anwendung:
+- Tabellenname unklar: zuerst tabellen_auflisten (oder verbrauchs_tabellen für Verbrauch und Kosten), dann tabelle_beschreiben.
+- Zahlen einer Tabelle (Summen, Monate, Vorjahr, Maximum, Anteile): zuerst tabelle_auswerten; einzelne Zeilen: tabelle_zeilen; sql_lesen nur, wenn das nicht reicht.
+- Hat eine Tabelle für das gewählte Jahr keine Daten, sag das und nimm das neueste vorhandene Jahr.
+- Strom, Gas, Erdgas, Wasser, Kosten: zuerst verbrauchs_tabellen, dann tabelle_auswerten mit nur_verbrauch = true.
+- Wartung, Störungen, Stillstand, Reparaturzeit: wartung_stoerungen. Hallen, Anlagen, Dokumente: werksplan.
+- Monatskommentar: monatskommentare. Basisjahr, Ziel, Preis, CO₂-Faktor: energie_einstellungen.
+- Mittlere Reparaturzeit (MTTR) = Durchschnitt der Dauer behobener Störungen. Stillstandsstunden nur aus Störungen mit Auswirkung „stillstand“.`;
 
 async function frageClaude(verlauf, jahr) {
   const messages = verlauf
@@ -844,7 +931,7 @@ async function frageClaude(verlauf, jahr) {
 
   const abfragen = [];
   const tools = WERKZEUGE.map(({ name, description, input_schema }) => ({ name, description, input_schema }));
-  for (let runde = 0; runde < 8; runde++) {
+  for (let runde = 0; runde < 10; runde++) {
     const a = await claude.messages.create({ model: MODELL, max_tokens: 2000, system: systemPrompt(jahr), tools, messages });
     if (a.stop_reason !== "tool_use") {
       return { antwort: a.content.filter(b => b.type === "text").map(b => b.text).join("\n").trim() || "(keine Antwort)", abfragen };
@@ -1191,8 +1278,9 @@ app.get("/api/kpi", route((req) => req.query.quelle === "berechnet" ? kpiBerechn
 app.get("/api/energie", route((req) => energie(jahrAus(req))));
 app.get("/api/status", (req, res) => res.json({ ki: !!claude, modell: claude ? MODELL : null, appUrl: APP_URL }));   // APP_URL : liens des codes QR
 app.get("/api/tabellen", route(() => tabellenListe()));
+app.get("/api/verbrauch/tabellen", route(() => verbrauchsTabellen()));   // Übersicht : tables de consommation / coûts
 app.get("/api/tabellen/:name/uebersicht", async (req, res) => {
-  try { res.json(await tabellenUebersicht(req.params.name, zahlParam(req.query.jahr, 1900, 2100), zahlParam(req.query.monat, 1, 12))); }
+  try { res.json(await tabellenUebersicht(req.params.name, zahlParam(req.query.jahr, 1900, 2100), zahlParam(req.query.monat, 1, 12), req.query.nur === "verbrauch")); }
   catch (err) { res.status(/nicht gefunden/.test(err.message) ? 404 : 500).json({ fehler: err.message }); }
 });
 app.get("/api/tabellen/:name", async (req, res) => {
