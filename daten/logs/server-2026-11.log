@@ -27,3 +27,136 @@
 2026-11-05T14:58:50.739Z LOG    Protokoll: C:\Users\hammiche\sqlserver-mcp\daten\logs\server-2026-11.log
 2026-11-05T14:58:50.740Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
 2026-11-05T14:58:50.741Z LOG   ============================================================
+2026-11-06T13:31:20.517Z LOG   ============================================================
+2026-11-06T13:31:20.517Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-06T13:31:20.517Z LOG    Datenbank: localhost:1433/undefined
+2026-11-06T13:31:20.518Z LOG    KI-Assistent: ohne KI (ANTHROPIC_API_KEY fehlt in .env)
+2026-11-06T13:31:20.518Z LOG    Bearbeiten: aus (nur Lesen)
+2026-11-06T13:31:20.518Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-06T13:31:20.518Z LOG    ⚠️  Ordner dist fehlt: zuerst « npm run build » ausführen.
+2026-11-06T13:31:20.519Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-06T13:31:20.519Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-06T13:31:20.519Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-06T13:31:20.519Z LOG   ============================================================
+2026-11-06T13:32:08.122Z LOG   ============================================================
+2026-11-06T13:32:08.122Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-06T13:32:08.123Z LOG    Datenbank: localhost:1433/undefined
+2026-11-06T13:32:08.123Z LOG    KI-Assistent: ohne KI (ANTHROPIC_API_KEY fehlt in .env)
+2026-11-06T13:32:08.123Z LOG    Bearbeiten: aus (nur Lesen)
+2026-11-06T13:32:08.124Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-06T13:32:08.124Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-06T13:32:08.124Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-06T13:32:08.125Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-06T13:32:08.125Z LOG   ============================================================
+2026-11-09T07:51:27.579Z LOG   [Sicherung] 2026-11-09_085127: benutzer.json, einstellungen.json
+2026-11-09T07:51:27.581Z LOG   ============================================================
+2026-11-09T07:51:27.582Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T07:51:27.582Z LOG    Datenbank: localhost:1433/undefined
+2026-11-09T07:51:27.582Z LOG    KI-Assistent: ohne KI (ANTHROPIC_API_KEY fehlt in .env)
+2026-11-09T07:51:27.583Z LOG    Bearbeiten: aus (nur Lesen)
+2026-11-09T07:51:27.585Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T07:51:27.587Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T07:51:27.588Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T07:51:27.588Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T07:51:27.589Z LOG   ============================================================
+2026-11-09T08:09:39.867Z LOG   ============================================================
+2026-11-09T08:09:39.867Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T08:09:39.868Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-09T08:09:39.869Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-09T08:09:39.869Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-09T08:09:39.870Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T08:09:39.871Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T08:09:39.871Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T08:09:39.871Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T08:09:39.872Z LOG   ============================================================
+2026-11-09T08:20:29.644Z ERROR [Kommentar] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgs2bQRzvPmdQPNZQ4asN"}
+2026-11-09T08:39:41.732Z LOG   ============================================================
+2026-11-09T08:39:41.733Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T08:39:41.733Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-09T08:39:41.734Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-09T08:39:41.734Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-09T08:39:41.735Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T08:39:41.736Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T08:39:41.736Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T08:39:41.736Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T08:39:41.737Z LOG   ============================================================
+2026-11-09T08:50:55.030Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgs4uxfDG8DMqj4njsb9K"}
+2026-11-09T08:52:34.032Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgs53GEqrssmA8bftYAqz"}
+2026-11-09T09:17:30.297Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgs6wZC8NCkDwRSwwWgzn"}
+2026-11-09T09:17:37.876Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgs6x7pvCpBzDDMwEywwP"}
+2026-11-09T09:18:21.089Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgs71Jn4QJy42UNu277dv"}
+2026-11-09T09:20:00.182Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgs78c8ndqXqbv9Up4VpF"}
+2026-11-09T09:22:56.439Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgs7MbSjFHjn2t39YG9KU"}
+2026-11-09T09:52:46.414Z LOG   ============================================================
+2026-11-09T09:52:46.414Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T09:52:46.415Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-09T09:52:46.415Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-09T09:52:46.415Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-09T09:52:46.417Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T09:52:46.417Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T09:52:46.417Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T09:52:46.418Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T09:52:46.418Z LOG   ============================================================
+2026-11-09T10:05:31.424Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgsAbwUDrZuMPsCnTEhj9"}
+2026-11-09T10:20:34.186Z LOG   ============================================================
+2026-11-09T10:20:34.186Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T10:20:34.187Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-09T10:20:34.187Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-09T10:20:34.187Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-09T10:20:34.188Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T10:20:34.188Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T10:20:34.188Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T10:20:34.189Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T10:20:34.189Z LOG   ============================================================
+2026-11-09T11:50:46.666Z LOG   ============================================================
+2026-11-09T11:50:46.668Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T11:50:46.668Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-09T11:50:46.669Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-09T11:50:46.669Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-09T11:50:46.671Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T11:50:46.671Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T11:50:46.672Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T11:50:46.672Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T11:50:46.673Z LOG   ============================================================
+2026-11-09T11:59:00.874Z LOG   ============================================================
+2026-11-09T11:59:00.875Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T11:59:00.875Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-09T11:59:00.876Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-09T11:59:00.876Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-09T11:59:00.877Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T11:59:00.877Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T11:59:00.878Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T11:59:00.878Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T11:59:00.878Z LOG   ============================================================
+2026-11-09T12:08:05.877Z LOG   ============================================================
+2026-11-09T12:08:05.878Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T12:08:05.879Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-09T12:08:05.879Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-09T12:08:05.880Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-09T12:08:05.881Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T12:08:05.882Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T12:08:05.882Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T12:08:05.883Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T12:08:05.884Z LOG   ============================================================
+2026-11-09T12:16:21.450Z LOG   ============================================================
+2026-11-09T12:16:21.450Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T12:16:21.450Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-09T12:16:21.451Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-09T12:16:21.451Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-09T12:16:21.453Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T12:16:21.453Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T12:16:21.454Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T12:16:21.454Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T12:16:21.455Z LOG   ============================================================
+2026-11-09T12:23:05.364Z LOG   ============================================================
+2026-11-09T12:23:05.364Z LOG    MRS Produktion 4.0.0 läuft: http://localhost:3000
+2026-11-09T12:23:05.365Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-09T12:23:05.365Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-09T12:23:05.365Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-09T12:23:05.367Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-09T12:23:05.367Z LOG    Sicherungen: C:\Users\HammicheSaid\sqlserver-mcp\daten\sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-09T12:23:05.368Z LOG    Protokoll: C:\Users\HammicheSaid\sqlserver-mcp\daten\logs\server-2026-11.log
+2026-11-09T12:23:05.368Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-09T12:23:05.368Z LOG   ============================================================
+2026-11-09T12:30:46.036Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgsMgLaAxfDdR3cquXxRK"}
+2026-11-09T12:30:51.296Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgsMgj4HQ6nPPnn5paXAc"}

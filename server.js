@@ -1064,8 +1064,8 @@ app.delete("/api/benutzer/:login", (req, res) => {
 //   BACKUP_STUNDE  heure de la sauvegarde nocturne (défaut : 2)
 // La .env n'est PAS sauvegardée (elle contient des mots de passe) : la garder à part.
 // ---------------------------------------------------------------------
-const SICHERUNG_DATEIEN = ["benutzer.json", "massnahmen.json", "kommentare.json", "einstellungen.json", "aenderungen.log"];
-const WIEDERHERSTELLBAR = ["benutzer.json", "massnahmen.json", "kommentare.json", "einstellungen.json"];
+const SICHERUNG_DATEIEN = ["benutzer.json", "massnahmen.json", "kommentare.json", "einstellungen.json", "anlagen.json", "wartung.json", "aenderungen.log"];
+const WIEDERHERSTELLBAR = ["benutzer.json", "massnahmen.json", "kommentare.json", "einstellungen.json", "anlagen.json", "wartung.json"];
 const BACKUP_ORDNER = path.resolve(DATEN, env("BACKUP_ORDNER", "sicherungen"));
 const BACKUP_ZIEL = env("BACKUP_ZIEL", "") ? path.resolve(env("BACKUP_ZIEL")) : null;
 const BACKUP_ANZAHL = Math.max(3, parseInt(env("BACKUP_ANZAHL", "30"), 10) || 30);
@@ -1189,7 +1189,7 @@ app.get("/api/energie/jahre", route(() => energieJahre()));
 app.get("/api/kpi", route((req) => req.query.quelle === "berechnet" ? kpiBerechnet(jahrAus(req))
   : kpiDaten(jahrAus(req), req.query.quelle === "gesamt" ? "gesamt" : "monat")));
 app.get("/api/energie", route((req) => energie(jahrAus(req))));
-app.get("/api/status", (req, res) => res.json({ ki: !!claude, modell: claude ? MODELL : null }));
+app.get("/api/status", (req, res) => res.json({ ki: !!claude, modell: claude ? MODELL : null, appUrl: APP_URL }));   // APP_URL : liens des codes QR
 app.get("/api/tabellen", route(() => tabellenListe()));
 app.get("/api/tabellen/:name/uebersicht", async (req, res) => {
   try { res.json(await tabellenUebersicht(req.params.name, zahlParam(req.query.jahr, 1900, 2100), zahlParam(req.query.monat, 1, 12))); }
@@ -1223,6 +1223,397 @@ app.post("/api/bearbeiten/pruefen", (req, res) => { if (darfBearbeiten(req, res)
 app.post("/api/tabellen/:name/zeilen", bearbeiten((req) => zeileEinfuegen(req.params.name, req.body?.werte, req.benutzer.login)));
 app.put("/api/tabellen/:name/zeilen", bearbeiten((req) => zeileAendern(req.params.name, req.body?.schluessel, req.body?.werte, req.benutzer.login)));
 app.delete("/api/tabellen/:name/zeilen", bearbeiten((req) => zeileLoeschen(req.params.name, req.body?.schluessel, req.benutzer.login)));
+
+// ---------------------------------------------------------------------
+// 5c. Werksplan 3D : halles et installations, avec leur documentation
+//     daten/anlagen.json  : position, dimensions, description, données techniques, liens
+//     daten/dokumente/<id>/ : fichiers téléversés (PDF, plans, photos …)
+//     Lire : tout le monde. Modifier, téléverser, supprimer : rôle « bearbeiter » ou « admin ».
+// ---------------------------------------------------------------------
+const ANLAGEN_DATEI = path.join(DATEN, "anlagen.json");
+const DOKU_ORDNER = path.join(DATEN, "dokumente");
+const W_TYPEN = ["halle", "presse", "aufbereitung", "ofen", "lager", "sonstige"];
+const W_SEU = ["P1", "P2", "UB", "ME"];
+const DOKU_ENDUNGEN = [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+  ".txt", ".csv", ".dwg", ".dxf", ".step", ".stp", ".zip"];
+const DOKU_INLINE = [".pdf", ".png", ".jpg", ".jpeg", ".webp", ".gif", ".txt"];
+// plan de départ (à adapter dans l'application : bouton « Bearbeiten »)
+const W_START = [
+  { id: "halle-1", name: "Halle 1", typ: "halle", x: -22, z: 0, breite: 38, tiefe: 26, hoehe: 12,
+    beschreibung: "Pressenhalle mit Presse I, Presse II und Presse III. Fläche, Baujahr und Ansprechpartner hier ergänzen." },
+  { id: "halle-2", name: "Halle 2", typ: "halle", x: 22, z: 0, breite: 38, tiefe: 26, hoehe: 12,
+    beschreibung: "Halle mit UBC-Aufbereitung und der Anlage ME. Fläche, Baujahr und Ansprechpartner hier ergänzen." },
+  { id: "presse-1", name: "Presse I", typ: "presse", halle: "halle-1", seu: "P1", x: -32, z: -3, breite: 6, tiefe: 5, hoehe: 7 },
+  { id: "presse-2", name: "Presse II", typ: "presse", halle: "halle-1", seu: "P2", x: -22, z: -3, breite: 6, tiefe: 5, hoehe: 7 },
+  { id: "presse-3", name: "Presse III", typ: "presse", halle: "halle-1", x: -12, z: -3, breite: 6, tiefe: 5, hoehe: 7 },
+  { id: "ubc", name: "UBC-Aufbereitung", typ: "aufbereitung", halle: "halle-2", seu: "UB", x: 14, z: -3, breite: 11, tiefe: 6, hoehe: 6 },
+  { id: "me", name: "ME", typ: "ofen", halle: "halle-2", seu: "ME", x: 31, z: -3, breite: 7, tiefe: 7, hoehe: 7,
+    beschreibung: "Anlage mit erfassten Betriebsstunden. Genaue Bezeichnung mit der Fachabteilung klären." },
+  { id: "lager", name: "Materiallager", typ: "lager", x: 0, z: 22, breite: 24, tiefe: 8, hoehe: 4 }
+].map(a => ({ halle: null, seu: null, drehung: 0, beschreibung: "", daten: [], links: [], notizen: "", dokumente: [], ...a }));
+
+function anlagenLesen() {
+  try { return JSON.parse(fs.readFileSync(ANLAGEN_DATEI, "utf8")); }
+  catch (err) {
+    if (err.code === "ENOENT") return JSON.parse(JSON.stringify(W_START));
+    throw new Error(`anlagen.json ist beschädigt: ${err.message}`);
+  }
+}
+function anlagenSchreiben(liste) {
+  const tmp = ANLAGEN_DATEI + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(liste, null, 2), "utf8");
+  fs.renameSync(tmp, ANLAGEN_DATEI);
+}
+function anlagenPruefen(liste, bisher) {
+  if (!Array.isArray(liste) || liste.length > 150) throw fehler400("Ungültige Liste der Elemente (höchstens 150).");
+  const text = (v, max) => String(v ?? "").trim().slice(0, max);
+  const zahl = (v, min, max, name) => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < min || n > max) throw fehler400(`„${name}“ muss zwischen ${min} und ${max} liegen.`);
+    return Math.round(n * 100) / 100;
+  };
+  const ids = new Set();
+  const neu = liste.map(e => {
+    const id = String(e?.id ?? "");
+    if (!/^[a-z0-9-]{1,40}$/.test(id) || ids.has(id)) throw fehler400(`Ungültige oder doppelte Kennung: ${id}`);
+    ids.add(id);
+    const name = text(e.name, 80);
+    if (!name) throw fehler400("Jedes Element braucht einen Namen.");
+    if (!W_TYPEN.includes(e.typ)) throw fehler400(`Ungültiger Typ bei „${name}“.`);
+    const links = (Array.isArray(e.links) ? e.links : []).slice(0, 30)
+      .map(l => ({ titel: text(l?.titel, 120), url: text(l?.url, 500) })).filter(l => l.url);
+    for (const l of links) if (!/^(https?:\/\/|\\\\)/i.test(l.url))
+      throw fehler400(`Link bei „${name}“: nur http(s)://… oder ein Netzwerkpfad \\\\server\\freigabe ist erlaubt.`);
+    return {
+      id, name, typ: e.typ, halle: e.typ === "halle" ? null : (e.halle || null), seu: W_SEU.includes(e.seu) ? e.seu : null,
+      x: zahl(e.x, -500, 500, "X"), z: zahl(e.z, -500, 500, "Z"),
+      breite: zahl(e.breite, 0.5, 300, "Breite"), tiefe: zahl(e.tiefe, 0.5, 300, "Tiefe"), hoehe: zahl(e.hoehe, 0.5, 60, "Höhe"),
+      drehung: zahl(e.drehung ?? 0, -360, 360, "Drehung"),
+      beschreibung: text(e.beschreibung, 4000), notizen: text(e.notizen, 4000),
+      daten: (Array.isArray(e.daten) ? e.daten : []).slice(0, 40)
+        .map(x => ({ name: text(x?.name, 60), wert: text(x?.wert, 200) })).filter(x => x.name || x.wert),
+      links,
+      live: livePruefen(e.live),
+      dokumente: bisher.find(b => b.id === id)?.dokumente ?? []          // les fichiers ne se modifient que par leurs propres routes
+    };
+  });
+  for (const a of neu) if (a.halle && !neu.some(h => h.id === a.halle && h.typ === "halle")) a.halle = null;
+  return neu;
+}
+// ---------------------------------------------------------------------
+// 5e. Données en temps réel (Live) pour le Werksplan 3D
+//     Chaque élément peut être relié à une table de la base : la dernière ligne (colonne de temps la plus récente)
+//     donne l'état (marche / arrêt / panne) et les valeurs affichées. Lecture seule, noms vérifiés dans INFORMATION_SCHEMA.
+//     Le serveur garde le résultat 5 s en mémoire : beaucoup d'écrans ouverts ne chargent pas la base.
+// ---------------------------------------------------------------------
+function livePruefen(l) {
+  if (!l || !l.tabelle) return null;
+  const n = (v, max = 128) => (v == null || String(v).trim() === "" ? null : String(v).trim().slice(0, max));
+  const tabelle = n(l.tabelle);
+  if (!/^[A-Za-z_][A-Za-z0-9_ ]*(\.[A-Za-z_][A-Za-z0-9_ ]*)?$/.test(tabelle.replace(/[[\]]/g, ""))) throw fehler400("Live-Daten: ungültiger Tabellenname.");
+  if (!n(l.zeitSpalte)) throw fehler400("Live-Daten: bitte die Zeitspalte wählen.");
+  const schwelle = Number(l.schwelle);
+  return {
+    tabelle, zeitSpalte: n(l.zeitSpalte),
+    filterSpalte: n(l.filterSpalte), filterWert: n(l.filterSpalte) ? String(l.filterWert ?? "").slice(0, 200) : null,
+    statusSpalte: n(l.statusSpalte), laufWerte: n(l.laufWerte, 300), stoerWerte: n(l.stoerWerte, 300),
+    schwelleSpalte: n(l.statusSpalte) ? null : n(l.schwelleSpalte), schwelle: Number.isFinite(schwelle) ? schwelle : 0,
+    werte: (Array.isArray(l.werte) ? l.werte : []).slice(0, 4)
+      .map(w => ({ spalte: n(w?.spalte), name: n(w?.name, 40), einheit: n(w?.einheit, 12) })).filter(w => w.spalte),
+    maxAlterMin: Number(l.maxAlterMin) > 0 ? Math.min(10080, Math.round(Number(l.maxAlterMin))) : 15
+  };
+}
+const liveWert = (v) => (v instanceof Date ? v.toISOString() : typeof v === "string" && v.trim() !== "" && !isNaN(v) ? Number(v) : v ?? null);
+async function liveLesen(cfg) {
+  const struktur = await tabelleBeschreiben(cfg.tabelle);               // existe ? (sinon erreur claire)
+  const vorhanden = new Set(struktur.spalten.map(s => s.spalte));
+  const pruef = (spalte, feld) => { if (spalte && !vorhanden.has(spalte)) throw new Error(`Die Spalte „${spalte}“ (${feld}) gibt es nicht in ${struktur.tabelle}.`); };
+  pruef(cfg.zeitSpalte, "Zeit"); pruef(cfg.filterSpalte, "Filter"); pruef(cfg.statusSpalte, "Status"); pruef(cfg.schwelleSpalte, "Schwelle");
+  cfg.werte.forEach(w => pruef(w.spalte, "Anzeige"));
+  const [schema, table] = teileName(cfg.tabelle);
+  const ziel = `${qi(schema)}.${qi(table)}`, z = qi(cfg.zeitSpalte);
+  const spalten = [...new Set([cfg.statusSpalte, cfg.schwelleSpalte, ...cfg.werte.map(w => w.spalte)].filter(Boolean))];
+  const filter = (req) => {
+    if (!cfg.filterSpalte) return `WHERE ${z} IS NOT NULL`;
+    req.input("f", sql.NVarChar(200), String(cfg.filterWert ?? ""));
+    return `WHERE ${z} IS NOT NULL AND LTRIM(RTRIM(CAST(${qi(cfg.filterSpalte)} AS nvarchar(200)))) = @f`;
+  };
+  return nurLesen(async (tx) => {
+    const r1 = new sql.Request(tx);
+    // temps et âge calculés par SQL Server lui-même : pas de décalage de fuseau horaire
+    const zeile = (await r1.query(`SELECT TOP (1) CONVERT(varchar(19), ${z}, 120) AS __zeit, DATEDIFF(SECOND, ${z}, GETDATE()) AS __alter
+      ${spalten.map((s, i) => `, ${qi(s)} AS [c${i}]`).join("")} FROM ${ziel} ${filter(r1)} ORDER BY ${z} DESC`)).recordset[0];
+    if (!zeile) return { status: "keine", werte: [], verlauf: [] };
+    const wert = (spalte) => liveWert(zeile[`c${spalten.indexOf(spalte)}`]);
+    const liste = (t) => String(t || "").split(/[,;]/).map(x => x.trim().toLowerCase()).filter(Boolean);
+    let status = "daten", rohStatus = null;
+    if (cfg.maxAlterMin && zeile.__alter > cfg.maxAlterMin * 60) status = "veraltet";
+    else if (cfg.statusSpalte) {
+      rohStatus = wert(cfg.statusSpalte);
+      const v = String(rohStatus ?? "").trim().toLowerCase();
+      status = liste(cfg.stoerWerte).includes(v) ? "stoerung" : liste(cfg.laufWerte).includes(v) ? "lauf" : "stopp";
+    } else if (cfg.schwelleSpalte) status = Number(wert(cfg.schwelleSpalte)) > cfg.schwelle ? "lauf" : "stopp";
+    // courbe des 60 dernières valeurs de la première colonne affichée
+    let verlauf = [];
+    const erste = cfg.werte[0]?.spalte;
+    if (erste) {
+      const r2 = new sql.Request(tx);
+      verlauf = (await r2.query(`SELECT TOP (60) CONVERT(varchar(16), ${z}, 120) AS t, ${qi(erste)} AS v FROM ${ziel} ${filter(r2)} ORDER BY ${z} DESC`)).recordset
+        .reverse().map(x => ({ t: x.t, v: Number(x.v) })).filter(x => Number.isFinite(x.v));
+    }
+    return { status, rohStatus, zeit: zeile.__zeit, alterSek: zeile.__alter,
+             werte: cfg.werte.map(w => ({ name: w.name || w.spalte, einheit: w.einheit, wert: wert(w.spalte) })), verlauf };
+  });
+}
+let liveCache = null, liveLaeuft = null;
+function liveAlle() {
+  if (liveCache && Date.now() - liveCache.t < 5000) return Promise.resolve(liveCache.daten);
+  if (!liveLaeuft) liveLaeuft = (async () => {
+    const anlagen = {};
+    await Promise.all(anlagenLesen().filter(a => a.live?.tabelle).map(async a => {
+      try { anlagen[a.id] = await liveLesen(a.live); }
+      catch (err) { anlagen[a.id] = { status: "fehler", fehler: err.message, werte: [], verlauf: [] }; }
+    }));
+    const daten = { zeit: new Date().toISOString(), anlagen };
+    liveCache = { t: Date.now(), daten };
+    return daten;
+  })().finally(() => { liveLaeuft = null; });
+  return liveLaeuft;
+}
+app.get("/api/live", route(() => liveAlle()));
+app.get("/api/live/spalten", route((req) => tabelleBeschreiben(String(req.query.tabelle || ""))));
+app.post("/api/live/test", async (req, res) => {
+  try {
+    if (!darfSchreiben(req)) throw fehler400("Keine Berechtigung: Ihre Rolle erlaubt nur das Lesen.", 403);
+    const cfg = livePruefen(req.body?.live);
+    if (!cfg) throw fehler400("Bitte zuerst eine Tabelle wählen.");
+    res.json(await liveLesen(cfg));
+  } catch (err) { res.status(err.status || 400).json({ fehler: err.message }); }
+});
+
+const dokumentVon = (req) => {
+  const a = anlagenLesen().find(x => x.id === req.params.id);
+  const dok = a?.dokumente?.find(d => d.id === req.params.dok);
+  return { a, dok };
+};
+
+app.get("/api/anlagen", route((req) => ({ liste: anlagenLesen(), darf: darfSchreiben(req) })));
+app.put("/api/anlagen", (req, res) => {
+  try {
+    if (!darfSchreiben(req)) throw fehler400("Keine Berechtigung: Ihre Rolle erlaubt nur das Lesen.", 403);
+    const bisher = anlagenLesen();
+    const neu = anlagenPruefen(req.body?.liste, bisher);
+    const entfernt = bisher.filter(a => !neu.some(n => n.id === a.id));
+    for (const a of entfernt) fs.rmSync(path.join(DOKU_ORDNER, a.id), { recursive: true, force: true });
+    anlagenSchreiben(neu);
+    liveCache = null;                                       // configuration modifiée : relire tout de suite
+    const geaendert = neu.filter(n => JSON.stringify(n) !== JSON.stringify(bisher.find(b => b.id === n.id))).map(n => n.name);
+    protokoll({ aktion: "WERKSPLAN ÄNDERN", wer: req.benutzer.login, tabelle: "anlagen.json",
+      alt: entfernt.length ? { name: `entfernt: ${entfernt.map(a => a.name).join(", ")}` } : undefined,
+      neu: geaendert.length ? { name: geaendert.join(", ") } : undefined });
+    res.json({ liste: neu, darf: true });
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+app.post("/api/anlagen/:id/dokumente", express.raw({ type: () => true, limit: "25mb" }), (req, res) => {
+  try {
+    if (!darfSchreiben(req)) throw fehler400("Keine Berechtigung: Ihre Rolle erlaubt nur das Lesen.", 403);
+    const liste = anlagenLesen(), a = liste.find(x => x.id === req.params.id);
+    if (!a) throw fehler400("Element nicht gefunden. Bitte zuerst den Werksplan speichern.", 404);
+    let name = "";
+    try { name = decodeURIComponent(String(req.headers["x-dateiname"] || "")); } catch { /* nom illisible */ }
+    name = path.basename(name).replace(/[\u0000-\u001f<>:"/\\|?*]/g, "_").trim().slice(0, 150);
+    const endung = path.extname(name).toLowerCase();
+    if (!name || !DOKU_ENDUNGEN.includes(endung)) throw fehler400(`Dateityp nicht erlaubt. Erlaubt: ${DOKU_ENDUNGEN.join(" ")}`);
+    if (!Buffer.isBuffer(req.body) || !req.body.length) throw fehler400("Die Datei ist leer.");
+    if ((a.dokumente || []).length >= 100) throw fehler400("Höchstens 100 Dokumente je Element.");
+    const dok = { id: crypto.randomUUID(), name, datei: `${crypto.randomUUID()}${endung}`, groesse: req.body.length,
+                  zeit: new Date().toISOString(), wer: req.benutzer.name };
+    fs.mkdirSync(path.join(DOKU_ORDNER, a.id), { recursive: true });
+    fs.writeFileSync(path.join(DOKU_ORDNER, a.id, dok.datei), req.body);
+    a.dokumente = [...(a.dokumente || []), dok];
+    anlagenSchreiben(liste);
+    protokoll({ aktion: "DOKUMENT NEU", wer: req.benutzer.login, tabelle: "anlagen.json", neu: { name: `${a.name}: ${name}` } });
+    res.json({ liste, darf: true });
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+app.get("/api/anlagen/:id/dokumente/:dok", (req, res) => {
+  try {
+    const { a, dok } = dokumentVon(req);
+    const datei = dok && path.join(DOKU_ORDNER, a.id, dok.datei);
+    if (!dok || !fs.existsSync(datei)) return res.status(404).json({ fehler: "Dokument nicht gefunden." });
+    const endung = path.extname(dok.datei).toLowerCase();
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Disposition", `${DOKU_INLINE.includes(endung) ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(dok.name)}`);
+    res.sendFile(datei);
+  } catch (err) { res.status(500).json({ fehler: err.message }); }
+});
+app.delete("/api/anlagen/:id/dokumente/:dok", (req, res) => {
+  try {
+    if (!darfSchreiben(req)) throw fehler400("Keine Berechtigung: Ihre Rolle erlaubt nur das Lesen.", 403);
+    const liste = anlagenLesen(), a = liste.find(x => x.id === req.params.id);
+    const dok = a?.dokumente?.find(d => d.id === req.params.dok);
+    if (!dok) throw fehler400("Dokument nicht gefunden.", 404);
+    fs.rmSync(path.join(DOKU_ORDNER, a.id, dok.datei), { force: true });
+    a.dokumente = a.dokumente.filter(d => d.id !== dok.id);
+    anlagenSchreiben(liste);
+    protokoll({ aktion: "DOKUMENT LÖSCHEN", wer: req.benutzer.login, tabelle: "anlagen.json", alt: { name: `${a.name}: ${dok.name}` } });
+    res.json({ liste, darf: true });
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+
+// ---------------------------------------------------------------------
+// 5d. Maintenance et pannes (Wartung & Störungen), liées aux éléments du Werksplan
+//     daten/wartung.json : { plaene: [...], stoerungen: [...] }
+//     Signaler une panne : tout utilisateur connecté (aussi depuis le téléphone via QR).
+//     Plans, « erledigt », clôture et suppression : rôle « bearbeiter » ou « admin ».
+// ---------------------------------------------------------------------
+const WARTUNG_DATEI = path.join(DATEN, "wartung.json");
+const W_EINHEITEN = ["tage", "wochen", "monate"];
+function wartungLesen() {
+  try { const d = JSON.parse(fs.readFileSync(WARTUNG_DATEI, "utf8")); return { plaene: d.plaene || [], stoerungen: d.stoerungen || [] }; }
+  catch (err) { if (err.code === "ENOENT") return { plaene: [], stoerungen: [] }; throw new Error(`wartung.json ist beschädigt: ${err.message}`); }
+}
+function wartungSchreiben(d) {
+  const tmp = WARTUNG_DATEI + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(d, null, 2), "utf8");
+  fs.renameSync(tmp, WARTUNG_DATEI);
+}
+const heuteISO = () => new Date().toLocaleDateString("sv-SE");
+// prochaine échéance = dernière exécution + intervalle (null si jamais faite)
+function wNaechste(p) {
+  if (!p.letzte) return null;
+  const d = new Date(`${p.letzte}T12:00:00`);
+  if (p.einheit === "monate") d.setMonth(d.getMonth() + p.intervall); else d.setDate(d.getDate() + p.intervall * (p.einheit === "wochen" ? 7 : 1));
+  return d.toLocaleDateString("sv-SE");
+}
+const wText = (v, max) => (v == null || v === "" ? null : String(v).trim().slice(0, max) || null);
+const wDatum = (v, feld) => {
+  if (v == null || v === "") return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(v)) || isNaN(new Date(v))) throw fehler400(`„${feld}“ ist kein gültiges Datum.`);
+  return String(v);
+};
+const wZeit = (v, feld) => {
+  if (v == null || v === "") return null;
+  const d = new Date(v);
+  if (isNaN(d)) throw fehler400(`„${feld}“ ist kein gültiger Zeitpunkt.`);
+  return d.toISOString();
+};
+const wAnlage = (id) => {
+  if (!anlagenLesen().some(a => a.id === id)) throw fehler400("Bitte eine Halle oder Anlage des Werksplans wählen.");
+  return id;
+};
+function planPruefen(e) {
+  const titel = wText(e?.titel, 150);
+  if (!titel) throw fehler400("Bitte die Aufgabe eingeben.");
+  const intervall = Number(e.intervall);
+  if (!Number.isInteger(intervall) || intervall < 1 || intervall > 1000) throw fehler400("Das Intervall muss eine ganze Zahl zwischen 1 und 1000 sein.");
+  const letzte = wDatum(e.letzte, "Zuletzt durchgeführt");
+  if (letzte && letzte > heuteISO()) throw fehler400("„Zuletzt durchgeführt“ liegt in der Zukunft.");
+  return { anlage: wAnlage(String(e.anlage || "")), titel, intervall, einheit: W_EINHEITEN.includes(e.einheit) ? e.einheit : "monate",
+           verantwortlich: wText(e.verantwortlich, 120), beschreibung: wText(e.beschreibung, 2000), letzte };
+}
+function stoerungPruefen(e, alt) {
+  const titel = wText(e?.titel, 150);
+  if (!titel) throw fehler400("Bitte kurz beschreiben, was passiert ist.");
+  const beginn = wZeit(e.beginn, "Seit") || alt?.beginn || new Date().toISOString();
+  const ende = wZeit(e.ende, "Behoben am");
+  if (new Date(beginn) > Date.now() + 5 * 60000) throw fehler400("Der Beginn liegt in der Zukunft.");
+  if (ende && new Date(ende) < new Date(beginn) - 60000) throw fehler400("„Behoben am“ liegt vor dem Beginn der Störung.");   // 1 min de tolérance (saisie à la minute)
+  return { anlage: wAnlage(String(e.anlage || "")), titel, stufe: ["stillstand", "eingeschraenkt"].includes(e.stufe) ? e.stufe : "stillstand",
+           beschreibung: wText(e.beschreibung, 2000), beginn, ende, ursache: wText(e.ursache, 1000), behebung: wText(e.behebung, 1000) };
+}
+const wAntwort = (req, d) => ({ ...d, darf: darfSchreiben(req) });
+const nurBearbeiter = (req) => { if (!darfSchreiben(req)) throw fehler400("Keine Berechtigung: Ihre Rolle erlaubt nur das Lesen.", 403); };
+
+app.get("/api/wartung", route((req) => wAntwort(req, wartungLesen())));
+app.post("/api/wartung/plaene", (req, res) => {
+  try {
+    nurBearbeiter(req);
+    const d = wartungLesen();
+    const neu = { id: crypto.randomUUID(), ...planPruefen(req.body), historie: [], erstellt: new Date().toISOString() };
+    d.plaene.push(neu); wartungSchreiben(d);
+    protokoll({ aktion: "WARTUNGSPLAN NEU", wer: req.benutzer.login, tabelle: "wartung.json", neu: { titel: neu.titel, anlage: neu.anlage } });
+    res.json(wAntwort(req, d));
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+app.put("/api/wartung/plaene/:id", (req, res) => {
+  try {
+    nurBearbeiter(req);
+    const d = wartungLesen(), i = d.plaene.findIndex(p => p.id === req.params.id);
+    if (i < 0) throw fehler400("Wartungsplan nicht gefunden.", 404);
+    const alt = d.plaene[i];
+    d.plaene[i] = { ...alt, ...planPruefen({ ...alt, ...req.body }), geaendert: new Date().toISOString() };
+    wartungSchreiben(d);
+    protokoll({ aktion: "WARTUNGSPLAN ÄNDERN", wer: req.benutzer.login, tabelle: "wartung.json", alt: { titel: alt.titel }, neu: { titel: d.plaene[i].titel } });
+    res.json(wAntwort(req, d));
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+app.delete("/api/wartung/plaene/:id", (req, res) => {
+  try {
+    nurBearbeiter(req);
+    const d = wartungLesen(), alt = d.plaene.find(p => p.id === req.params.id);
+    if (!alt) throw fehler400("Wartungsplan nicht gefunden.", 404);
+    d.plaene = d.plaene.filter(p => p.id !== alt.id); wartungSchreiben(d);
+    protokoll({ aktion: "WARTUNGSPLAN LÖSCHEN", wer: req.benutzer.login, tabelle: "wartung.json", alt: { titel: alt.titel, anlage: alt.anlage } });
+    res.json(wAntwort(req, d));
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+app.post("/api/wartung/plaene/:id/erledigt", (req, res) => {
+  try {
+    nurBearbeiter(req);
+    const d = wartungLesen(), p = d.plaene.find(x => x.id === req.params.id);
+    if (!p) throw fehler400("Wartungsplan nicht gefunden.", 404);
+    const datum = wDatum(req.body?.datum, "Durchgeführt am") || heuteISO();
+    if (datum > heuteISO()) throw fehler400("Das Datum liegt in der Zukunft.");
+    p.historie = [{ id: crypto.randomUUID(), datum, notiz: wText(req.body?.notiz, 1000), wer: req.benutzer.name, zeit: new Date().toISOString() },
+                  ...(p.historie || [])].slice(0, 200);
+    if (!p.letzte || datum > p.letzte) p.letzte = datum;
+    wartungSchreiben(d);
+    protokoll({ aktion: "WARTUNG ERLEDIGT", wer: req.benutzer.login, tabelle: "wartung.json", neu: { titel: p.titel, datum } });
+    res.json(wAntwort(req, d));
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+app.post("/api/stoerungen", (req, res) => {
+  try {
+    const d = wartungLesen();
+    const neu = { id: crypto.randomUUID(), ...stoerungPruefen(req.body), gemeldetVon: req.benutzer.name, erstellt: new Date().toISOString() };
+    if (neu.ende) neu.behobenVon = req.benutzer.name;
+    d.stoerungen.unshift(neu); wartungSchreiben(d);
+    protokoll({ aktion: "STÖRUNG GEMELDET", wer: req.benutzer.login, tabelle: "wartung.json", neu: { titel: neu.titel, anlage: neu.anlage, stufe: neu.stufe } });
+    // stillstand : e-mail immédiat aux abonnés « kritisch »
+    if (mailer && neu.stufe === "stillstand" && !neu.ende) {
+      const anlageName = anlagenLesen().find(a => a.id === neu.anlage)?.name ?? neu.anlage;
+      const html = mailRahmen("Störung: Stillstand", `${anlageName}, gemeldet von ${req.benutzer.name} am ${new Date(neu.beginn).toLocaleString("de-DE")}`,
+        liste([zeile("#CF4B3B", neu.titel, neu.beschreibung || "Keine Beschreibung.")]), { text: "Im Werksplan öffnen", url: `${APP_URL}/#werk/${neu.anlage}` });
+      mailSenden(abonnenten("kritisch"), `MRS Störung: ${anlageName} steht (${neu.titel})`, html, textVersion(html), "kritisch").catch(() => {});
+    }
+    res.json(wAntwort(req, d));
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+app.put("/api/stoerungen/:id", (req, res) => {
+  try {
+    nurBearbeiter(req);
+    const d = wartungLesen(), i = d.stoerungen.findIndex(s => s.id === req.params.id);
+    if (i < 0) throw fehler400("Störung nicht gefunden.", 404);
+    const alt = d.stoerungen[i];
+    const neu = { ...alt, ...stoerungPruefen({ ...alt, ...req.body }, alt), geaendert: new Date().toISOString() };
+    if (neu.ende && !alt.ende) neu.behobenVon = req.benutzer.name;
+    if (!neu.ende) delete neu.behobenVon;
+    d.stoerungen[i] = neu; wartungSchreiben(d);
+    protokoll({ aktion: neu.ende && !alt.ende ? "STÖRUNG BEHOBEN" : "STÖRUNG ÄNDERN", wer: req.benutzer.login, tabelle: "wartung.json", neu: { titel: neu.titel, ende: neu.ende } });
+    res.json(wAntwort(req, d));
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+app.delete("/api/stoerungen/:id", (req, res) => {
+  try {
+    nurBearbeiter(req);
+    const d = wartungLesen(), alt = d.stoerungen.find(s => s.id === req.params.id);
+    if (!alt) throw fehler400("Störung nicht gefunden.", 404);
+    d.stoerungen = d.stoerungen.filter(s => s.id !== alt.id); wartungSchreiben(d);
+    protokoll({ aktion: "STÖRUNG LÖSCHEN", wer: req.benutzer.login, tabelle: "wartung.json", alt: { titel: alt.titel, anlage: alt.anlage } });
+    res.json(wAntwort(req, d));
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
 
 // --- Plan d'actions ---
 app.get("/api/massnahmen", route((req) => ({ liste: massnahmenLesen(), schutz: false, darf: darfSchreiben(req) })));
@@ -1535,6 +1926,21 @@ async function benachrichtigungenPruefen(erzwingen = false) {
           mailRahmen("Fristen im Maßnahmenplan", `${faellig.length} Maßnahme(n)`, liste(faellig.map(x => zeile(x.stufe === "ueberfaellig" ? "#CF4B3B" : "#E39A2D",
             x.titel, `${x.stufe === "ueberfaellig" ? "Überfällig seit" : "Fällig am"} ${datumDE(x.frist)} · ${ANLAGE_NAME[x.anlage] ?? x.anlage}${x.verantwortlich ? ` · ${x.verantwortlich}` : ""}`))),
             { text: "Maßnahmenplan öffnen", url: `${APP_URL}/#massnahmen` }), null, "fristen");
+      }
+      // maintenance : 7 jours avant l'échéance et au dépassement (une fois par échéance)
+      const w = wartungLesen(), namen = Object.fromEntries(anlagenLesen().map(x => [x.id, x.name]));
+      const wf = [];
+      for (const p of w.plaene) {
+        const naechste = wNaechste(p);
+        const stufe = !naechste ? null : naechste < heute ? "ueberfaellig" : naechste <= in7 ? "bald" : null;
+        const key = `w|${p.id}|${naechste}|${stufe}`;
+        if (stufe && !z.fristen[key]) { wf.push({ ...p, naechste, stufe }); z.fristen[key] = jetzt.toISOString(); }
+      }
+      if (wf.length && anFristen.length) {
+        await mailSenden(anFristen, `MRS Wartung: ${wf.some(x => x.stufe === "ueberfaellig") ? "überfällige und " : ""}anstehende Arbeiten`,
+          mailRahmen("Fällige Wartungsarbeiten", `${wf.length} Arbeit(en)`, liste(wf.map(x => zeile(x.stufe === "ueberfaellig" ? "#CF4B3B" : "#E39A2D",
+            `${namen[x.anlage] ?? x.anlage}: ${x.titel}`, `${x.stufe === "ueberfaellig" ? "Überfällig seit" : "Fällig am"} ${datumDE(x.naechste)}${x.verantwortlich ? ` · ${x.verantwortlich}` : ""}`))),
+            { text: "Wartungsplan öffnen", url: `${APP_URL}/#wartung` }), null, "fristen");
       }
     }
 

@@ -15,7 +15,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import ReactDOM from "react-dom/client";
 import {
   ConfigProvider, App as AntApp, theme, Layout, Menu, Select, Badge, Button, Tooltip, Typography, Alert, Grid, Space, Drawer,
-  Row, Col, Card, Statistic, Skeleton, Empty, Flex, Tag, Table, Checkbox, Input, Tabs, Modal, Form, InputNumber, Switch,
+  Upload, Slider, Row, Col, Card, Statistic, Skeleton, Empty, Flex, Tag, Table, Checkbox, Input, Tabs, Modal, Form, InputNumber, Switch,
   DatePicker, Popconfirm, Avatar, Collapse, Segmented, Descriptions, Progress, List, Result, Dropdown
 } from "antd";
 import {
@@ -26,6 +26,7 @@ import {
   UndoOutlined, ClockCircleOutlined, BlockOutlined, ColumnWidthOutlined, SettingOutlined, FlagOutlined, CheckCircleOutlined,
   CloseCircleOutlined, ExperimentOutlined, DotChartOutlined, CloudOutlined, EuroOutlined, AlertOutlined, AreaChartOutlined,
   StockOutlined, MinusCircleOutlined, QuestionCircleOutlined, FundOutlined, BellOutlined, ProjectOutlined, WarningOutlined, FilePdfOutlined, PrinterOutlined, FileTextOutlined, LoginOutlined, LogoutOutlined, CrownOutlined, TeamOutlined, FundProjectionScreenOutlined, SwapOutlined, DiffOutlined, DesktopOutlined, FullscreenOutlined, FullscreenExitOutlined, PauseOutlined, CaretRightOutlined,
+  HomeOutlined, LinkOutlined, UploadOutlined, PaperClipOutlined, QrcodeOutlined, ToolOutlined,
   LeftOutlined, RightOutlined, CloseOutlined, CommentOutlined, MailOutlined, SendOutlined,
   PlusOutlined, EditOutlined, DeleteOutlined, LockOutlined, UnlockOutlined, KeyOutlined, UserOutlined, CopyOutlined,
   CodeOutlined, BuildOutlined, BulbOutlined, InfoCircleOutlined, CheckOutlined
@@ -290,7 +291,7 @@ function prognoseBerechnen(m, rows, vorjahr, basisRows, einst) {
       return { Monat: mo, monat: MONATE[mo - 1].slice(0, 3), ist, prognose: prog, vorjahr: vj ? verbrauchVon(vj, a) : null,
                kumIst: r ? kum : null, kumPrognose: mo >= letzter ? kum : null, band: k > 0 ? [kum - band, kum + band] : mo === letzter ? [kum, kum] : null };
     });
-    return { ...a, rest, letzter, ytdV: p.ytdV, restV, jahrV, jahrM, spanne, enpiJahr, enpiHoch, enpiBasisJahr, zielJahr, benoetigt, status,
+    return { ...a, rest, letzter, ytdV: p.ytdV, ytdM: p.ytdM, xRest: p.x, yRest: p.y, leistung: p.leistung ?? null, restV, jahrV, jahrM, spanne, enpiJahr, enpiHoch, enpiBasisJahr, zielJahr, benoetigt, status,
              vjV, methode: p.methode, monate,
              kostenJahr: einst.preis ? jahrV * einst.preis : null, co2Jahr: einst.co2 ? (jahrV * einst.co2) / 1000 : null };
   });
@@ -1277,10 +1278,281 @@ function Prognose({ p, f, jahr, einst, basisJahr, oeffneEinstellungen }) {
 }
 
 // flèche neutre (la consommation qui monte n'est pas forcément mauvaise : plus de production)
+// ---------- Simulator « Was wäre wenn » ----------
+// Part de la prévision (onglet Prognose) et modifie les mois restants :
+//  - quantité par installation (± %) → consommation recalculée avec le modèle de référence (a + b × quantité) × performance actuelle
+//  - consommation spécifique (± %) : meilleure ou moins bonne efficacité
+//  - mesures prévues du plan d'actions : économie annuelle ÷ 12 à partir du mois choisi
+// Quantité du site = quantité prévue × variation des quantités de Presse I, Presse II et UBC.
+const SZ_SPEICHER = "mrs-szenarien";
+const SZ_LEER = { menge: {}, eff: {}, preis: 0, massnahmen: {} };
+
+function simulieren(prog, sz, massnahmen) {
+  if (!prog?.length) return null;
+  const st = prog.find(x => x.key === "ST"), rest = st.rest;
+  const anlagen = prog.filter(x => x.key !== "ST");
+  const aktiv = (massnahmen || []).filter(m => sz.massnahmen?.[m.id] && m.einsparung > 0);
+  const einspar = (keys, mo) => aktiv.filter(m => keys.includes(m.anlage) && sz.massnahmen[m.id] <= mo).reduce((s, m) => s + m.einsparung / 12, 0);
+  const proMonat = {};
+  for (const a of anlagen) {
+    const mPct = (sz.menge?.[a.key] ?? 0) / 100, ePct = (sz.eff?.[a.key] ?? 0) / 100;
+    proMonat[a.key] = Object.fromEntries(rest.map(mo => {
+      const x = a.xRest?.[mo] || 0, y = a.yRest?.[mo] || 0, x2 = x * (1 + mPct);
+      let y2 = a.methode === "modell" && a.reg && a.leistung ? Math.max(0, a.reg.a + a.reg.b * x2) * a.leistung : x ? (y * x2) / x : y;
+      y2 = Math.max(0, y2 * (1 + ePct) - einspar([a.key], mo));
+      return [mo, { x: x2, y: y2 }];
+    }));
+  }
+  const presse = anlagen.filter(a => a.key !== "ME");
+  const site = Object.fromEntries(rest.map(mo => {
+    const x0 = presse.reduce((t, b) => t + (b.xRest?.[mo] || 0), 0), x1 = presse.reduce((t, b) => t + proMonat[b.key][mo].x, 0);
+    return [mo, { xB: st.xRest?.[mo] || 0, yB: st.yRest?.[mo] || 0, x: (st.xRest?.[mo] || 0) * (x0 ? x1 / x0 : 1),
+                  y: Math.max(0, anlagen.reduce((t, b) => t + proMonat[b.key][mo].y, 0) - einspar(["ST", "SO"], mo)) }];
+  }));
+  const zeilen = prog.map(a => {
+    const werte = a.key === "ST" ? site : proMonat[a.key];
+    const restY = rest.reduce((s, mo) => s + werte[mo].y, 0), restX = rest.reduce((s, mo) => s + werte[mo].x, 0);
+    const jahrV = a.ytdV + restY, jahrM = (a.ytdM || 0) + restX;
+    const enpi = jahrM > 0 ? (jahrV / jahrM) * a.faktor : null;
+    const noetigV = a.zielJahr ? (a.zielJahr / a.faktor) * jahrM - a.ytdV : null;
+    return { key: a.key, name: a.name, farbe: a.farbe, treiber: a.treiber, faktor: a.faktor, basisV: a.jahrV, basisEnpi: a.enpiJahr, jahrV, jahrM, enpi, restY,
+             zielJahr: a.zielJahr, erreicht: a.zielJahr && enpi != null ? enpi <= a.zielJahr : null,
+             noetigPct: noetigV != null && restY > 0 ? noetigV / restY - 1 : null };
+  });
+  return { rest, letzter: st.letzter, site, zeilen, st: zeilen.find(z => z.key === "ST") };
+}
+
+function Simulator({ en, massnahmen, jahr, f, oeffneEinstellungen }) {
+  const { message } = AntApp.useApp();
+  const [sz, setSz] = useState(SZ_LEER);
+  const [name, setName] = useState("");
+  const [gespeichert, setGespeichert] = useState(() => { try { return JSON.parse(localStorage.getItem(SZ_SPEICHER)) || []; } catch { return []; } });
+  const prog = en.prognose, einst = en.einst || {};
+  const kandidaten = useMemo(() => (massnahmen || []).filter(m => (m.status === "geplant" || m.status === "umsetzung") && m.einsparung > 0), [massnahmen]);
+  const sim = useMemo(() => simulieren(prog, sz, kandidaten), [prog, sz, kandidaten]);
+  const speichernListe = (l) => { setGespeichert(l); try { localStorage.setItem(SZ_SPEICHER, JSON.stringify(l)); } catch { /* sans stockage */ } };
+
+  if (!prog || !sim) return <Card><Skeleton active paragraph={{ rows: 8 }} /></Card>;
+  if (!sim.rest.length) return <Card><Result status="info" icon={<ExperimentOutlined />} title={`Das Jahr ${jahr} ist vollständig`}
+    subTitle="Der Simulator verändert die Monate, für die noch keine Ist-Werte vorliegen. Wählen Sie oben das laufende Jahr." /></Card>;
+
+  const anlagen = prog.filter(a => a.key !== "ST");
+  const st = sim.st, basisSt = prog.find(a => a.key === "ST");
+  const geaendert = JSON.stringify(sz) !== JSON.stringify(SZ_LEER);
+  const restText = `${MONATE[sim.rest[0] - 1]} – ${MONATE[sim.rest.at(-1) - 1]}`;
+  const pz = (v, n = 1) => (v == null ? "–" : `${v > 0 ? "+" : v < 0 ? "−" : "±"}${dez(Math.abs(v) * 100, n)} %`);
+  const setze = (feld, key, v) => setSz(s => ({ ...s, [feld]: { ...s[feld], [key]: v } }));
+  const startVon = (m) => {
+    const ab = sim.rest[0];
+    if (!m.frist || dayjs(m.frist).year() !== jahr) return ab;
+    return Math.min(12, Math.max(ab, dayjs(m.frist).month() + 2));            // effet le mois qui suit l'échéance
+  };
+  const preisFaktor = 1 + (sz.preis || 0) / 100;
+  const kosten = (v) => (einst.preis ? v * einst.preis : null);
+  // effort nécessaire pour l'objectif (site) : appliqué de façon égale à toutes les installations
+  const uebernehmen = () => {
+    const k = 1 + st.noetigPct;
+    setSz(s => ({ ...s, eff: Object.fromEntries(anlagen.map(a => [a.key, Math.max(-50, Math.floor(((1 + (s.eff[a.key] || 0) / 100) * k - 1) * 100))])) }));
+  };
+
+  // graphiques : EnPI du site par mois et consommation cumulée
+  const rows = en.daten?.aktuell || [];
+  let cumIst = 0, cumB = 0, cumS = 0;
+  const chart = MONATE.map((m, i) => {
+    const mo = i + 1, r = rows.find(x => x.Monat === mo), s = sim.site[mo];
+    const istV = r ? verbrauchVon(r, STANDORT) : null, istM = r ? num(r.Gesamtmenge) : 0;
+    if (r) { cumIst += istV; cumB = cumIst; cumS = cumIst; }
+    if (s) { cumB += s.yB; cumS += s.y; }
+    const istEnpi = r && istM ? (istV / istM) * st.faktor : null;
+    const bruecke = mo === sim.letzter;
+    return { monat: m.slice(0, 3),
+      ist: istEnpi, basis: s ? (s.xB ? (s.yB / s.xB) * st.faktor : null) : bruecke ? istEnpi : null, szenario: s ? (s.x ? (s.y / s.x) * st.faktor : null) : bruecke ? istEnpi : null,
+      kIst: r ? cumIst : null, kBasis: s || bruecke ? cumB : null, kSzenario: s || bruecke ? cumS : null,
+      format: { ist: v => dez(v, 3), basis: v => dez(v, 3), szenario: v => dez(v, 3), kIst: zahl, kBasis: zahl, kSzenario: zahl } };
+  });
+
+  const regler = (feld, a, min, max, step, gutWennNegativ) => {
+    const v = sz[feld][a.key] ?? 0;
+    return (
+      <Flex align="center" gap={10}>
+        <Slider style={{ flex: 1, margin: "6px 4px" }} min={min} max={max} step={step} value={v} onChange={x => setze(feld, a.key, x)}
+          tooltip={{ formatter: x => `${x > 0 ? "+" : ""}${x} %` }} marks={{ 0: " " }} aria-label={`${a.name} ${feld === "menge" ? "Menge" : "spezifischer Verbrauch"}`} />
+        <Tag bordered={false} color={!v ? "default" : (v < 0) === gutWennNegativ ? "success" : "error"} style={{ width: 62, textAlign: "center", marginInlineEnd: 0 }}>{v > 0 ? "+" : ""}{v} %</Tag>
+      </Flex>
+    );
+  };
+
+  return (
+    <Flex vertical gap={16}>
+      <Alert type="info" showIcon icon={<ExperimentOutlined />} className="hinweis"
+        message={<><b>Was wäre wenn?</b> Ausgangspunkt ist die Prognose für {restText} {jahr}. Ändern Sie Menge, Effizienz oder Maßnahmen: alle Zahlen rechnen sofort neu. Die Ist-Monate bleiben unverändert.</>} />
+
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={9}>
+          <Card title={<Space><SettingOutlined />Annahmen {restText}</Space>}
+            extra={geaendert && <Button size="small" icon={<UndoOutlined />} onClick={() => setSz(SZ_LEER)}>Zurücksetzen</Button>}>
+            <Flex vertical gap={18}>
+              {anlagen.map(a => (
+                <div key={a.key}>
+                  <b><Punkt farbe={f[a.farbe]} />{a.name}</b>
+                  <Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 6 }}>{a.treiber === "Betriebsstunden" ? "Betriebsstunden" : "Verarbeitete Menge"}</Text>
+                  {regler("menge", a, -50, 50, 5, false)}
+                  <Text type="secondary" style={{ display: "block", fontSize: 12 }}>Spezifischer Verbrauch (negativ = effizienter)</Text>
+                  {regler("eff", a, -50, 30, 1, true)}
+                </div>
+              ))}
+              {einst.preis ? (
+                <div><b><EuroOutlined /> Energiepreis</b>
+                  <Flex align="center" gap={10}>
+                      <Slider style={{ flex: 1, margin: "6px 4px" }} min={-30} max={50} step={5} value={sz.preis || 0} onChange={x => setSz(s => ({ ...s, preis: x }))}
+                        tooltip={{ formatter: x => `${x > 0 ? "+" : ""}${x} %` }} marks={{ 0: " " }} aria-label="Energiepreis" />
+                      <Tag bordered={false} style={{ width: 62, textAlign: "center", marginInlineEnd: 0 }}>{sz.preis > 0 ? "+" : ""}{sz.preis || 0} %</Tag>
+                    </Flex>
+                  <Text type="secondary" style={{ fontSize: 12 }}>heute {dez(einst.preis, 4)} € je Einheit</Text>
+                </div>
+              ) : null}
+              <div>
+                <b><ProjectOutlined /> Geplante Maßnahmen</b>
+                {!kandidaten.length ? <Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 4 }}>Keine offenen Maßnahmen mit erwarteter Einsparung im Maßnahmenplan.</Text> : (
+                  <Flex vertical gap={6} style={{ marginTop: 6 }}>
+                    {kandidaten.map(m => {
+                      const an = sz.massnahmen[m.id];
+                      return (
+                        <Flex key={m.id} align="center" gap={8} className="w-karte" style={{ padding: "6px 10px" }}>
+                          <Checkbox checked={!!an} onChange={e => setSz(s => ({ ...s, massnahmen: { ...s.massnahmen, [m.id]: e.target.checked ? startVon(m) : undefined } }))} />
+                          <Flex vertical style={{ flex: 1, minWidth: 0 }}>
+                            <Text ellipsis={{ tooltip: m.titel }}>{m.titel}</Text>
+                            <Text type="secondary" style={{ fontSize: 12 }}>{ANLAGE_NAME[m.anlage]}, −{zahl(m.einsparung)} / Jahr</Text>
+                          </Flex>
+                          {an && <Select size="small" value={an} onChange={v => setSz(s => ({ ...s, massnahmen: { ...s.massnahmen, [m.id]: v } }))} style={{ width: 92 }}
+                            aria-label="Wirksam ab" options={sim.rest.map(mo => ({ value: mo, label: `ab ${MONATE[mo - 1].slice(0, 3)}` }))} />}
+                        </Flex>
+                      );
+                    })}
+                  </Flex>
+                )}
+              </div>
+              <div>
+                <b><DatabaseOutlined /> Szenarien</b>
+                <Space.Compact style={{ width: "100%", marginTop: 6 }}>
+                  <Input placeholder="Name, z. B. Mehr UBC" value={name} maxLength={40} onChange={e => setName(e.target.value)} />
+                  <Button icon={<CheckOutlined />} disabled={!name.trim() || !geaendert}
+                    onClick={() => { speichernListe([{ name: name.trim(), sz }, ...gespeichert.filter(x => x.name !== name.trim())].slice(0, 12)); setName(""); message.success("Szenario gespeichert"); }}>Speichern</Button>
+                </Space.Compact>
+                {gespeichert.length > 0 && (
+                  <Flex wrap gap={6} style={{ marginTop: 8 }}>
+                    {gespeichert.map(x => (
+                      <Tag key={x.name} closable style={{ cursor: "pointer", padding: "2px 8px" }} color={JSON.stringify(x.sz) === JSON.stringify(sz) ? "blue" : undefined}
+                        onClick={() => setSz({ ...SZ_LEER, ...x.sz })} onClose={(e) => { e.preventDefault(); speichernListe(gespeichert.filter(y => y.name !== x.name)); }}>{x.name}</Tag>
+                    ))}
+                  </Flex>
+                )}
+                <Text type="secondary" style={{ display: "block", fontSize: 12, marginTop: 6 }}>Szenarien werden in diesem Browser gespeichert.</Text>
+              </div>
+            </Flex>
+          </Card>
+        </Col>
+
+        <Col xs={24} xl={15}>
+          <Flex vertical gap={16}>
+            <Row gutter={[16, 16]}>
+              <Kpi titel={`Verbrauch ${jahr}`} icon={<ThunderboltOutlined />} value={st.jahrV} formatter={zahl}>
+                <Text type="secondary">{geaendert ? <><Delta v={st.basisV ? st.jahrV / st.basisV - 1 : null} /> ggü. Prognose</> : "Prognose ohne Änderung"}</Text>
+              </Kpi>
+              <Kpi titel="EnPI Jahresende" icon={<FundOutlined />} value={st.enpi ?? "–"} formatter={v => dez(v, 3)}>
+                <Text type="secondary">Prognose: {dez(st.basisEnpi, 3)}</Text>
+              </Kpi>
+              <Kpi titel="Energieziel" icon={<AimOutlined />} value={st.zielJahr == null ? "kein Ziel" : st.erreicht ? "erreicht" : "verfehlt"}
+                valueStyle={{ fontSize: 22, color: st.zielJahr == null ? undefined : st.erreicht ? "#2F9E8F" : "#CF4B3B" }}>
+                {st.zielJahr == null ? <Button type="link" size="small" icon={<SettingOutlined />} onClick={oeffneEinstellungen} style={{ padding: 0 }}>Ziel festlegen</Button>
+                  : <Text type="secondary">Ziel-EnPI {dez(st.zielJahr, 3)}</Text>}
+              </Kpi>
+              <Kpi titel={einst.preis ? "Energiekosten Jahr" : "CO₂ Jahr"} icon={einst.preis ? <EuroOutlined /> : <CloudOutlined />}
+                value={einst.preis ? st.jahrV * einst.preis * preisFaktor : einst.co2 ? (st.jahrV * einst.co2) / 1000 : "–"}
+                formatter={v => (typeof v !== "number" ? v : einst.preis ? `${zahl(v)} €` : `${dez(v, 1)} t`)}>
+                {einst.preis ? <Text type="secondary">{geaendert ? `${(st.jahrV * preisFaktor - st.basisV) >= 0 ? "+" : "−"}${zahl(Math.abs(kosten(st.jahrV * preisFaktor - st.basisV)))} € ggü. Prognose` : "Prognose ohne Änderung"}</Text>
+                  : !einst.co2 ? <Button type="link" size="small" icon={<SettingOutlined />} onClick={oeffneEinstellungen} style={{ padding: 0 }}>Preis oder CO₂-Faktor eintragen</Button> : null}
+              </Kpi>
+            </Row>
+
+            {st.zielJahr != null && st.noetigPct != null && (
+              st.noetigPct >= 0
+                ? <Alert type="success" showIcon message={`Mit diesen Annahmen wird das Energieziel erreicht.`}
+                    description={`Reserve: der Verbrauch in ${restText} dürfte noch um ${dez(st.noetigPct * 100, 1)} % höher sein.`} />
+                : st.noetigPct <= -0.99
+                  ? <Alert type="error" showIcon message="Das Ziel ist mit den restlichen Monaten nicht mehr erreichbar." />
+                  : <Alert type="warning" showIcon message={`Für das Ziel muss der Verbrauch in ${restText} um ${dez(-st.noetigPct * 100, 1)} % niedriger sein als in diesem Szenario.`}
+                      action={<Button size="small" onClick={uebernehmen}>Als Effizienz übernehmen</Button>} />
+            )}
+
+            <Row gutter={[16, 16]}>
+              <Col xs={24} lg={12}>
+                <Card title={<Space><LineChartOutlined />EnPI Standort je Monat</Space>} style={{ height: "100%" }}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <LineChart data={chart} margin={{ top: 8, right: 12, left: 8, bottom: 0 }}>
+                      <CartesianGrid vertical={false} stroke={f.gitter} />
+                      <XAxis dataKey="monat" tickLine={false} axisLine={false} tick={{ fill: f.text, fontSize: 12 }} />
+                      <YAxis tickFormatter={v => dez(v, 2)} tickLine={false} axisLine={false} width={56} tick={{ fill: f.text, fontSize: 12 }} domain={["auto", "auto"]} />
+                      <ChartTooltip content={<EnergieTooltip />} />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 13, color: f.text }} />
+                      {st.zielJahr && <ReferenceLine y={st.zielJahr} stroke="#2F9E8F" strokeDasharray="4 4" label={{ value: "Ziel", position: "insideTopRight", fill: "#2F9E8F", fontSize: 12 }} />}
+                      <Line dataKey="ist" name="Ist" stroke={f.linie} strokeWidth={3} dot={{ r: 3 }} type="monotone" connectNulls={false} />
+                      <Line dataKey="basis" name="Prognose" stroke={f.vorjahr} strokeWidth={2} strokeDasharray="5 5" dot={false} type="monotone" />
+                      <Line dataKey="szenario" name="Szenario" stroke={f.ubc} strokeWidth={3} dot={{ r: 3 }} type="monotone" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </Card>
+              </Col>
+              <Col xs={24} lg={12}>
+                <Card title={<Space><StockOutlined />Kumulierter Verbrauch</Space>} style={{ height: "100%" }}>
+                  <ResponsiveContainer width="100%" height={240}>
+                    <LineChart data={chart} margin={{ top: 8, right: 12, left: 8, bottom: 0 }}>
+                      <CartesianGrid vertical={false} stroke={f.gitter} />
+                      <XAxis dataKey="monat" tickLine={false} axisLine={false} tick={{ fill: f.text, fontSize: 12 }} />
+                      <YAxis tickFormatter={kurz} tickLine={false} axisLine={false} width={72} tick={{ fill: f.text, fontSize: 12 }} />
+                      <ChartTooltip content={<EnergieTooltip />} />
+                      <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 13, color: f.text }} />
+                      <Line dataKey="kIst" name="Ist" stroke={f.linie} strokeWidth={3} dot={false} type="monotone" />
+                      <Line dataKey="kBasis" name="Prognose" stroke={f.vorjahr} strokeWidth={2} strokeDasharray="5 5" dot={false} type="monotone" />
+                      <Line dataKey="kSzenario" name="Szenario" stroke={f.ubc} strokeWidth={3} dot={false} type="monotone" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </Card>
+              </Col>
+            </Row>
+
+            <Card title={<Space><AppstoreOutlined />Ergebnis je Anlage</Space>} styles={{ body: { padding: 0 } }}>
+              <Table rowKey="key" size="middle" pagination={false} className="zahl kopf-nowrap" dataSource={sim.zeilen} scroll={{ x: "max-content" }}
+                rowClassName={x => (x.key === "ST" ? "zeile-aktiv" : "")}
+                columns={[
+                  { title: "Anlage", dataIndex: "name", fixed: "left", render: (n, x) => <span><Punkt farbe={f[x.farbe]} />{x.key === "ST" ? <b>{n}</b> : n}</span> },
+                  { title: "Verbrauch Prognose", dataIndex: "basisV", align: "right", render: zahl },
+                  { title: "Verbrauch Szenario", dataIndex: "jahrV", align: "right", render: v => <b>{zahl(v)}</b> },
+                  { title: "Δ", key: "dv", align: "right", render: (_, x) => <Delta v={x.basisV ? x.jahrV / x.basisV - 1 : null} /> },
+                  { title: "EnPI Prognose", dataIndex: "basisEnpi", align: "right", render: v => dez(v, 3) },
+                  { title: "EnPI Szenario", dataIndex: "enpi", align: "right", render: v => <b>{dez(v, 3)}</b> },
+                  ...(einst.ziel ? [
+                    { title: "Ziel-EnPI", dataIndex: "zielJahr", align: "right", render: v => dez(v, 3) },
+                    { title: "Ziel", dataIndex: "erreicht", align: "center", render: e => e == null ? "–"
+                        : e ? <Tag color="success" bordered={false} icon={<CheckCircleOutlined />}>erreicht</Tag> : <Tag color="error" bordered={false} icon={<CloseCircleOutlined />}>verfehlt</Tag> }
+                  ] : [])
+                ]} />
+            </Card>
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              <InfoCircleOutlined /> Verbrauch bei geänderter Menge über das Baseline-Modell (Grundlast + Anteil je Menge) mit der bisherigen Leistung des Jahres; ohne belastbares Modell proportional zur Menge.
+              Maßnahmen wirken mit einem Zwölftel ihrer erwarteten Jahreseinsparung je Monat. Eine Hochrechnung, keine Garantie.
+            </Text>
+          </Flex>
+        </Col>
+      </Row>
+    </Flex>
+  );
+}
+
 const BDeltaNeutral = ({ v }) => v == null ? "–" : <Text type="secondary" style={{ whiteSpace: "nowrap" }}>{v > 0 ? <ArrowUpOutlined /> : <ArrowDownOutlined />} {prozent(Math.abs(v))}</Text>;
 
 // --- Page Energie : onglets + réglages ---
-function Energie({ jahr, dunkel, en, darf }) {
+function Energie({ jahr, dunkel, en, darf, massnahmen }) {
   const { message } = AntApp.useApp();
   const { daten, jahreSeu, fehler, einst, setEinst, basisJahr, kpi } = en;
   const [sichtbar, setSichtbar] = useState(["P1", "P2", "UB"]);
@@ -1337,6 +1609,8 @@ function Energie({ jahr, dunkel, en, darf }) {
           children: kpi ? <EnpiBaseline m={kpi} f={f} jahr={jahr} basisJahr={basisJahr} /> : warten },
         { key: "prognose", label: <Space><FundProjectionScreenOutlined />Prognose</Space>,
           children: kpi ? <Prognose p={en.prognose} f={f} jahr={jahr} einst={einst} basisJahr={basisJahr} oeffneEinstellungen={oeffneEinstellungen} /> : warten },
+        { key: "simulator", label: <Space><ExperimentOutlined />Was wäre wenn?</Space>,
+          children: kpi ? <Simulator en={en} massnahmen={massnahmen} jahr={jahr} f={f} oeffneEinstellungen={oeffneEinstellungen} /> : warten },
         { key: "cockpit", label: <Space><AppstoreOutlined />KPI-Cockpit</Space>,
           children: kpi ? <KpiCockpit m={kpi} f={f} einst={einst} jahr={jahr} basisJahr={basisJahr} oeffneEinstellungen={oeffneEinstellungen} /> : warten }
       ]} />
@@ -2129,7 +2403,7 @@ function Massnahmen({ liste, schutz, darf, laden, en, jahr, dunkel, ziel, setZie
 
 // =====================================================================
 // Energiebericht : rapport A4 pour la revue de direction (ISO 50001 §9.3)
-// Mis en page pour l'impression ; « Drucken / PDF » → « Als PDF speichern » dans le navigateur.
+// « Als PDF speichern » télécharge directement le PDF (html2pdf.js) ; « Drucken » ouvre le dialogue d'impression.
 // Le rapport est toujours en clair (indépendant du mode sombre) pour l'impression.
 // =====================================================================
 const B = { text: "#1F2A33", leise: "#5F6B76", linie: "#DDE3E8", flaeche: "#F4F6F8", primaer: "#2B5874",
@@ -2167,6 +2441,7 @@ function Bericht({ en, massnahmen, jahr }) {
   });
   const [bericht, setBericht] = useState(null);      // { cfg, aktuell, vorjahr, basis } après « Bericht erstellen »
   const [laedt, setLaedt] = useState(false);
+  const [pdfLaedt, setPdfLaedt] = useState(false);
   const aendern = (x) => setCfg(c => ({ ...c, ...x }));
   useEffect(() => { try { localStorage.setItem(BERICHT_SPEICHER, JSON.stringify(cfg)); } catch { /* sans stockage */ } }, [cfg]);
   // année encore inconnue au démarrage (chargée depuis la base) ou absente de la table → année choisie en haut / la plus récente
@@ -2200,14 +2475,51 @@ function Bericht({ en, massnahmen, jahr }) {
     finally { setLaedt(false); }
   }
 
+  // PDF direkt herunterladen (ohne Druckdialog) – html2pdf.js wird erst beim Klick geladen
+  const dateiname = () => {
+    const c = bericht.cfg;
+    return `Energiebericht_${c.jahr}_${MONATE[c.von - 1]}-${MONATE[c.bis - 1]}`;
+  };
+  async function pdfSpeichern() {
+    const el = document.querySelector(".bericht");
+    if (!el || !bericht) return;
+    setPdfLaedt(true);
+    try {
+      const { default: html2pdf } = await import("html2pdf.js");
+      await html2pdf().set({
+        margin: [12, 12, 12, 12],
+        filename: `${dateiname()}.pdf`,
+        image: { type: "jpeg", quality: 0.95 },
+        html2canvas: { scale: 2, backgroundColor: "#ffffff", windowWidth: 1200 },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+        pagebreak: { mode: ["css", "legacy"], before: ".b-umbruch", avoid: [".b-block", "tr"] }
+      }).from(el).save();
+      message.success("PDF gespeichert (Ordner Downloads)");
+    } catch (e) {
+      message.error(`PDF konnte nicht erstellt werden: ${e.message}`, 6);
+    } finally {
+      setPdfLaedt(false);
+    }
+  }
+  // Drucken: Dateiname des PDFs = Titel der Seite während des Drucks
+  const drucken = () => {
+    const alt = document.title;
+    document.title = dateiname();
+    addEventListener("afterprint", () => { document.title = alt; }, { once: true });
+    window.print();
+  };
+
   return (
     <Flex vertical gap={16}>
       <Card className="no-print" title={<Space><FilePdfOutlined />Energiebericht zusammenstellen</Space>}
         extra={<Space wrap>
           <Button icon={<UndoOutlined />} onClick={() => setCfg(c => ({ ...berichtStandard(en, jahr), ersteller: c.ersteller }))}>Standard</Button>
           <Button type="primary" icon={<FileTextOutlined />} loading={laedt} onClick={erstellen}>{bericht ? "Bericht neu erstellen" : "Bericht erstellen"}</Button>
+          <Tooltip title={!bericht ? "Zuerst den Bericht erstellen" : veraltet ? "Die Auswahl wurde geändert: zuerst neu erstellen" : "PDF-Datei direkt herunterladen"}>
+            <Button type="primary" ghost icon={<DownloadOutlined />} loading={pdfLaedt} disabled={!bericht || veraltet} onClick={pdfSpeichern}>Als PDF speichern</Button>
+          </Tooltip>
           <Tooltip title={!bericht ? "Zuerst den Bericht erstellen" : veraltet ? "Die Auswahl wurde geändert: zuerst neu erstellen" : "Druckdialog öffnen"}>
-            <Button icon={<PrinterOutlined />} disabled={!bericht || veraltet} onClick={() => window.print()}>Drucken / PDF</Button>
+            <Button icon={<PrinterOutlined />} disabled={!bericht || veraltet} onClick={drucken}>Drucken</Button>
           </Tooltip>
         </Space>}>
         <Row gutter={[16, 12]}>
@@ -2253,8 +2565,8 @@ function Bericht({ en, massnahmen, jahr }) {
           </Col>
         </Row>
         <Text type="secondary" style={{ fontSize: 12, display: "block", marginTop: 12 }}>
-          <InfoCircleOutlined /> Nichts wird automatisch erzeugt: Der Bericht entsteht erst mit „Bericht erstellen“. Für das PDF im Druckdialog „Als PDF speichern“ wählen,
-          Kopf- und Fußzeilen aus- und Hintergrundgrafiken einschalten.
+          <InfoCircleOutlined /> Nichts wird automatisch erzeugt: Der Bericht entsteht erst mit „Bericht erstellen“. Danach mit „Als PDF speichern“
+          die Datei direkt herunterladen (Ordner Downloads) oder mit „Drucken“ auf Papier ausgeben.
         </Text>
       </Card>
 
@@ -3700,8 +4012,8 @@ function BenutzerMenue({ benutzer, abmelden, profilGespeichert }) {
 // abonnements e-mail (utilisés par le menu personnel et par l'admin)
 const ABOS = [
   { key: "woche", name: "Wochenbericht", text: "jeden Montag: Kennzahlen, Auffälligkeiten, Fristen, Monatskommentar", icon: <MailOutlined /> },
-  { key: "kritisch", name: "Kritische Auffälligkeiten", text: "sofort, wenn eine kritische Abweichung erkannt wird", icon: <CloseCircleOutlined /> },
-  { key: "fristen", name: "Fristen im Maßnahmenplan", text: "7 Tage vor der Frist und bei Überschreitung", icon: <ClockCircleOutlined /> }
+  { key: "kritisch", name: "Kritische Auffälligkeiten", text: "sofort bei einer kritischen Abweichung oder einem gemeldeten Stillstand", icon: <CloseCircleOutlined /> },
+  { key: "fristen", name: "Fristen (Maßnahmen und Wartung)", text: "7 Tage vor der Frist und bei Überschreitung", icon: <ClockCircleOutlined /> }
 ];
 const AboFelder = () => (
   <>
@@ -4589,8 +4901,1495 @@ function Monatskommentar({ k, en, warnungen, massnahmen, jahr, darf }) {
   );
 }
 
+// =====================================================================
+// Werksplan 3D : halles et installations en 3D, clic → documentation
+//  - three.js chargé seulement à l'ouverture de la page (import dynamique)
+//  - données : /api/anlagen (daten/anlagen.json), fichiers : daten/dokumente/<id>/
+//  - souris : glisser = tourner, clic droit glisser = déplacer, molette = zoom, clic = choisir
+// =====================================================================
+const W_TYPEN = {
+  halle: { name: "Halle", icon: <HomeOutlined /> },
+  presse: { name: "Presse", icon: <BuildOutlined /> },
+  aufbereitung: { name: "Aufbereitung", icon: <SyncOutlined /> },
+  ofen: { name: "Ofen / Anlage", icon: <FireOutlined /> },
+  lager: { name: "Lager", icon: <AppstoreOutlined /> },
+  sonstige: { name: "Sonstiges", icon: <SettingOutlined /> }
+};
+const W_FARBE_TYP = { halle: "#4F83AA", presse: "#7C6BB0", aufbereitung: "#B08D57", ofen: "#C4574A", lager: "#9C8A66", sonstige: "#8C99A6" };
+const wFarbe = (a, f) => (a.seu ? f[ANLAGE_FARBE[a.seu]] : W_FARBE_TYP[a.typ] || "#8C99A6");
+const ZUSTAND_FARBE = { ok: "#2F9E8F", warnung: "#E39A2D", kritisch: "#CF4B3B" };
+const ZUSTAND_NAME = { ok: "in Ordnung", warnung: "Warnung", kritisch: "kritisch" };
+const escHtml = (t) => String(t ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const DOKU_ANNEHMEN = ".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.dwg,.dxf,.step,.stp,.zip";
+const dateiGroesse = (b) => (b > 1048576 ? `${dez(b / 1048576, 1)} MB` : `${dez(Math.max(1, b / 1024), 0)} KB`);
+const kennung = (t) => String(t).toLowerCase().replace(/ä/g, "ae").replace(/ö/g, "oe").replace(/ü/g, "ue").replace(/ß/g, "ss")
+  .replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 24) || "element";
+// valeurs sûres pour la 3D (pendant la saisie, un champ peut être vide)
+const wSicher = (a) => {
+  const n = (v, d, min) => (Number.isFinite(Number(v)) && v !== null && v !== "" ? Math.max(min, Number(v)) : d);
+  return { ...a, x: n(a.x, 0, -500), z: n(a.z, 0, -500), breite: n(a.breite, 4, 0.5), tiefe: n(a.tiefe, 4, 0.5), hoehe: n(a.hoehe, 4, 0.5), drehung: n(a.drehung, 0, -360) };
+};
+
+// construit un élément en géométrie simple (une forme reconnaissable par type)
+function w3dBauen(THREE, a, farbe, dunkel) {
+  const g = new THREE.Group();
+  const { breite: b, tiefe: t, hoehe: h } = a;
+  const haupt = new THREE.Color(farbe), dunkler = haupt.clone().multiplyScalar(0.62), grau = new THREE.Color(dunkel ? "#55626e" : "#9aa5af");
+  const teil = (geo, c, x, y, z, eltern = g, extra = {}) => {
+    const m = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: c, roughness: 0.55, metalness: 0.2, ...extra }));
+    m.position.set(x, y, z); m.castShadow = true; m.receiveShadow = true; m.userData.rolle = "koerper";
+    eltern.add(m); return m;
+  };
+  // décalage propre à chaque élément : les machines ne bougent pas toutes en même temps
+  const phase = ([...String(a.id)].reduce((x, c) => x + c.charCodeAt(0), 0) % 97) / 97 * Math.PI * 2;
+  const Box = (x, y, z) => new THREE.BoxGeometry(x, y, z);
+  switch (a.typ) {
+    case "halle": {
+      const boden = new THREE.Mesh(Box(b, 0.2, t), new THREE.MeshStandardMaterial({ color: dunkel ? "#25303a" : "#d3dae0", roughness: 1 }));
+      boden.position.y = 0.1; boden.receiveShadow = true; g.add(boden);
+      const wand = new THREE.Mesh(Box(b, h, t), new THREE.MeshStandardMaterial({ color: haupt, transparent: true, opacity: 0.06, depthWrite: false, side: THREE.DoubleSide }));
+      wand.position.y = h / 2; wand.userData.rolle = "wand"; g.add(wand);
+      const kante = dunkel ? "#7FA8C3" : "#2B5874";
+      const linien = new THREE.LineSegments(new THREE.EdgesGeometry(Box(b, h, t)), new THREE.LineBasicMaterial({ color: kante }));
+      linien.position.y = h / 2; linien.userData = { rolle: "kante", farbe: kante, pickbar: false }; g.add(linien);
+      // fermes de toit : donnent l'échelle et la direction de la halle
+      const n = Math.max(2, Math.round(b / 8));
+      for (let i = 1; i < n; i++) {
+        const x = -b / 2 + (b / n) * i;
+        const p = [x, h, -t / 2, x, h + h * 0.14, 0, x, h + h * 0.14, 0, x, h, t / 2];
+        const geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.Float32BufferAttribute(p, 3));
+        const l = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: kante, transparent: true, opacity: 0.45 }));
+        l.userData.pickbar = false; g.add(l);
+      }
+      break;
+    }
+    case "presse": {
+      teil(Box(b, h * 0.28, t), dunkler, 0, h * 0.14, 0);                                     // bâti
+      for (const sx of [-1, 1]) teil(Box(b * 0.14, h * 0.5, t * 0.5), haupt, sx * b * 0.36, h * 0.53, 0);   // montants
+      teil(Box(b * 0.9, h * 0.22, t * 0.8), haupt, 0, h * 0.89, 0);                           // tête
+      const rampe = teil(Box(b * 0.5, 0.3, t * 0.5), grau, -b * 0.62, h * 0.2, 0); rampe.rotation.z = 0.35;
+      const stempel = teil(Box(b * 0.5, h * 0.1, t * 0.45), grau, 0, h * 0.6, 0);             // coulisseau
+      const r = Math.min(b, t) * 0.07;
+      const stange = teil(new THREE.CylinderGeometry(r, r, 1, 12), grau, 0, 0, 0);
+      const oben = h * 0.78, tief = h * 0.33, hoch = h * 0.68;
+      const setzen = (y) => { stempel.position.y = y; const top = y + h * 0.05, l = Math.max(0.05, oben - top); stange.scale.y = l; stange.position.y = top + l / 2; };
+      // course : descente rapide, remontée lente, petite pause en haut
+      g.userData.anim = (sek) => { const k = (Math.sin(sek * 1.5 + phase) + 1) / 2; setzen(hoch - (hoch - tief) * k ** 3); };
+      g.userData.anim(0);
+      break;
+    }
+    case "aufbereitung": {
+      teil(Box(b, h * 0.35, t), dunkler, 0, h * 0.175, 0);
+      const r = Math.min(t * 0.18, h * 0.15);
+      const walzen = [-t * 0.2, t * 0.2].map(z => {                                            // rouleaux du broyeur
+        const halter = new THREE.Group(); halter.position.set(-b * 0.15, h * 0.35 + r, z); halter.rotation.z = Math.PI / 2; g.add(halter);
+        return teil(new THREE.CylinderGeometry(r, r, b * 0.5, 8), haupt, 0, 0, 0, halter, { flatShading: true });
+      });
+      const trichter = teil(new THREE.CylinderGeometry(Math.min(b, t) * 0.3, Math.min(b, t) * 0.1, h * 0.35, 4), haupt, -b * 0.15, h * 0.8, 0); trichter.rotation.y = Math.PI / 4;
+      const band = new THREE.Group(); band.position.set(b * 0.3, h * 0.55, 0); band.rotation.z = 0.45; g.add(band);   // convoyeur
+      const laenge = b * 0.55;
+      teil(Box(laenge, 0.35, t * 0.25), grau, 0, 0, 0, band);
+      const stuecke = [0, 1, 2, 3].map(() => teil(Box(0.35, 0.3, 0.35), haupt, 0, 0.33, 0, band));
+      g.userData.anim = (sek) => {
+        walzen.forEach((w, i) => { w.rotation.y = sek * (i ? -3 : 3) + phase; });
+        stuecke.forEach((m, i) => { m.position.x = -laenge * 0.45 + ((sek * 0.35 + i / 4 + phase) % 1) * laenge * 0.9; });
+      };
+      g.userData.anim(0);
+      break;
+    }
+    case "ofen": {
+      const r = Math.min(b, t) / 2;
+      teil(new THREE.CylinderGeometry(r, r * 1.05, h * 0.62, 32), haupt, 0, h * 0.31, 0);
+      teil(new THREE.CylinderGeometry(r * 0.92, r, h * 0.1, 32), dunkler, 0, h * 0.67, 0);
+      teil(new THREE.CylinderGeometry(r * 0.12, r * 0.14, h * 0.45, 12), grau, r * 0.45, h * 0.72 + h * 0.2, r * 0.2);
+      const glut = new THREE.Mesh(new THREE.TorusGeometry(r * 1.02, Math.max(0.08, r * 0.05), 8, 48), new THREE.MeshBasicMaterial({ color: "#ff8a2a", transparent: true, opacity: 0.8 }));
+      glut.rotation.x = Math.PI / 2; glut.position.y = h * 0.62; g.add(glut);
+      const kamin = { x: r * 0.45, y: h * 1.145, z: r * 0.2 };
+      const rauch = Array.from({ length: 6 }, () => {
+        const m = new THREE.Mesh(new THREE.SphereGeometry(r * 0.16, 10, 8), new THREE.MeshStandardMaterial({ color: dunkel ? "#8c99a6" : "#c9d1d8", transparent: true, opacity: 0, depthWrite: false }));
+        m.userData.pickbar = false; g.add(m); return m;
+      });
+      g.userData.anim = (sek) => {
+        glut.material.opacity = 0.55 + 0.4 * (Math.sin(sek * 2.2 + phase) + 1) / 2;
+        rauch.forEach((m, i) => {
+          const k = (sek * 0.22 + i / rauch.length + phase) % 1;
+          m.position.set(kamin.x + k * 1.6, kamin.y + k * h * 0.7, kamin.z);
+          m.scale.setScalar(0.6 + k * 2); m.material.opacity = 0.45 * (1 - k) * Math.min(1, k * 6);
+        });
+      };
+      g.userData.anim(0);
+      break;
+    }
+    case "lager": {
+      const nx = Math.max(1, Math.floor(b / 2.4)), nz = Math.max(1, Math.floor(t / 2.4));
+      for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) {
+        const lagen = Math.min(Math.max(1, Math.floor(h / 1.4)), ((i * 7 + j * 3) % 3) + 1), hh = lagen * 1.3;
+        teil(Box(2, hh, 2), (i + j) % 2 ? haupt : dunkler, -b / 2 + 1.2 + i * (b - 2.4) / Math.max(1, nx - 1), hh / 2, -t / 2 + 1.2 + j * (t - 2.4) / Math.max(1, nz - 1));
+      }
+      break;
+    }
+    default: teil(Box(b, h, t), haupt, 0, h / 2, 0);
+  }
+  return g;
+}
+
+function Werk3D({ anlagen, auswahl, onWaehlen, dunkel, beschriftung, heim, animiert, drehen, zustandAn, live, hilfe = true, children }) {
+  const buehne = useRef(null);
+  const s = useRef(null);
+  const waehlenRef = useRef(onWaehlen); waehlenRef.current = onWaehlen;
+  const auswahlRef = useRef(auswahl); auswahlRef.current = auswahl;
+  const [bereit, setBereit] = useState(false);
+  const [fehler, setFehler] = useState("");
+
+  // 1. scène, caméra, lumières, contrôles (une seule fois)
+  useEffect(() => {
+    let weg = false;
+    (async () => {
+      try {
+        const [THREE, { OrbitControls }, { CSS2DRenderer, CSS2DObject }] = await Promise.all([
+          import("three"), import("three/examples/jsm/controls/OrbitControls.js"), import("three/examples/jsm/renderers/CSS2DRenderer.js")]);
+        if (weg || !buehne.current) return;
+        const el = buehne.current;
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        el.appendChild(renderer.domElement);
+        const labels = new CSS2DRenderer(); labels.domElement.className = "w3d-labels"; el.appendChild(labels.domElement);
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 1200);
+        camera.position.set(0, 60, 80);
+        const controls = new OrbitControls(camera, renderer.domElement);
+        Object.assign(controls, { enableDamping: true, maxPolarAngle: Math.PI * 0.47, minDistance: 6, maxDistance: 260 });
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.15));
+        const sonne = new THREE.DirectionalLight(0xffffff, 1.7);
+        sonne.position.set(45, 90, 35); sonne.castShadow = true; sonne.shadow.mapSize.set(2048, 2048);
+        Object.assign(sonne.shadow.camera, { left: -100, right: 100, top: 100, bottom: -100, near: 1, far: 300 });
+        scene.add(sonne);
+        const boden = new THREE.Mesh(new THREE.PlaneGeometry(600, 600), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1 }));
+        boden.rotation.x = -Math.PI / 2; boden.receiveShadow = true; scene.add(boden);
+        const gitter = new THREE.GridHelper(600, 150, 0x8899aa, 0x8899aa);
+        gitter.material.transparent = true; gitter.material.opacity = 0.18; gitter.position.y = 0.02; scene.add(gitter);
+        const gruppe = new THREE.Group(); scene.add(gruppe);
+        const reduziert = matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const st = { THREE, CSS2DObject, renderer, labels, scene, camera, controls, boden, gruppe, objekte: new Map(), flug: null, hover: null, raf: 0 };
+        s.current = st;
+
+        const groesse = () => {
+          const w = el.clientWidth, h = el.clientHeight; if (!w || !h) return;
+          renderer.setSize(w, h); labels.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+        };
+        groesse(); st.ro = new ResizeObserver(groesse); st.ro.observe(el);
+
+        // déplacements de caméra
+        st.fliegeZu = (ziel, pos, sofort) => {
+          if (sofort || reduziert) { camera.position.copy(pos); controls.target.copy(ziel); st.flug = null; return; }
+          st.flug = { vonPos: camera.position.clone(), nachPos: pos, vonZiel: controls.target.clone(), nachZiel: ziel, start: performance.now(), dauer: 900 };
+        };
+        st.heim = (sofort) => {
+          const as = [...st.objekte.values()].map(o => o.userData.a);
+          if (!as.length) return;
+          const minX = Math.min(...as.map(a => a.x - a.breite / 2)), maxX = Math.max(...as.map(a => a.x + a.breite / 2));
+          const minZ = Math.min(...as.map(a => a.z - a.tiefe / 2)), maxZ = Math.max(...as.map(a => a.z + a.tiefe / 2));
+          const ziel = new THREE.Vector3((minX + maxX) / 2, 0, (minZ + maxZ) / 2);
+          const spanne = Math.max(maxX - minX, maxZ - minZ, 20);
+          st.fliegeZu(ziel, ziel.clone().add(new THREE.Vector3(0, 0.85, 1).normalize().multiplyScalar(spanne * 1.05 + 14)), sofort);
+        };
+        st.fokus = (a) => {
+          const ziel = new THREE.Vector3(a.x, a.typ === "halle" ? 0 : a.hoehe * 0.45, a.z);
+          const abstand = a.typ === "halle" ? Math.max(a.breite, a.tiefe) * 1.15 + 10 : Math.max(a.breite, a.tiefe, a.hoehe) * 2.4 + 8;
+          const richtung = camera.position.clone().sub(controls.target).normalize();
+          if (richtung.y < 0.45) { richtung.y = 0.45; richtung.normalize(); }
+          st.fliegeZu(ziel, ziel.clone().add(richtung.multiplyScalar(abstand)));
+        };
+        // mise en évidence (survol / sélection)
+        st.markieren = () => {
+          for (const [id, o] of st.objekte) {
+            const sel = id === auswahlRef.current, hov = id === st.hover;
+            o.traverse(m => {
+              if (m.userData.rolle === "koerper") { m.material.emissive.set(sel ? "#F0AA2E" : hov ? "#4F83AA" : "#000000"); m.material.emissiveIntensity = sel ? 0.45 : hov ? 0.35 : 0; }
+              if (m.userData.rolle === "wand") m.material.opacity = sel ? 0.16 : hov ? 0.11 : 0.06;
+              if (m.userData.rolle === "kante") m.material.color.set(sel ? "#F0AA2E" : hov ? "#4F83AA" : m.userData.farbe);
+            });
+            o.userData.label?.classList.toggle("aktiv", sel);
+          }
+        };
+
+        // choix à la souris : d'abord les machines, ensuite les halles (sinon le mur de la halle cache tout)
+        const ray = new THREE.Raycaster(), maus = new THREE.Vector2(), dom = renderer.domElement;
+        const treffer = (e) => {
+          const r = dom.getBoundingClientRect();
+          maus.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+          ray.setFromCamera(maus, camera);
+          const alle = [...st.objekte.values()];
+          for (const nurHalle of [false, true]) {
+            const h = ray.intersectObjects(alle.filter(o => (o.userData.typ === "halle") === nurHalle), true).find(x => x.object.userData.pickbar !== false);
+            if (h) { let o = h.object; while (o && !o.userData.id) o = o.parent; return o?.userData.id ?? null; }
+          }
+          return null;
+        };
+        let unten = null;
+        dom.addEventListener("pointerdown", e => { unten = [e.clientX, e.clientY]; });
+        dom.addEventListener("pointerup", e => {
+          if (e.button !== 0 || !unten || Math.hypot(e.clientX - unten[0], e.clientY - unten[1]) > 5) return;
+          waehlenRef.current(treffer(e));
+        });
+        dom.addEventListener("pointermove", e => {
+          if (e.buttons) return;
+          const id = treffer(e);
+          if (id !== st.hover) { st.hover = id; dom.style.cursor = id ? "pointer" : "grab"; st.markieren(); }
+        });
+        dom.addEventListener("pointerleave", () => { if (st.hover) { st.hover = null; st.markieren(); } });
+
+        const ease = (x) => 1 - (1 - x) ** 3;
+        const schleife = (zeit) => {
+          st.raf = requestAnimationFrame(schleife);
+          if (st.flug) {
+            const x = Math.min(1, (zeit - st.flug.start) / st.flug.dauer), k = ease(Math.max(0, x));
+            camera.position.lerpVectors(st.flug.vonPos, st.flug.nachPos, k);
+            controls.target.lerpVectors(st.flug.vonZiel, st.flug.nachZiel, k);
+            if (x >= 1) st.flug = null;
+          }
+          if (st.animiert) { const sek = zeit / 1000; for (const o of st.objekte.values()) if (o.userData.laeuft !== false) o.userData.anim?.(sek); }
+          controls.update();
+          renderer.render(scene, camera); labels.render(scene, camera);
+        };
+        st.raf = requestAnimationFrame(schleife);
+        setBereit(true);
+      } catch (e) { setFehler(e.message || "WebGL ist in diesem Browser nicht verfügbar."); }
+    })();
+    return () => {
+      weg = true;
+      const st = s.current; if (!st) return;
+      cancelAnimationFrame(st.raf); st.ro?.disconnect(); st.controls.dispose();
+      st.scene.traverse(o => { o.geometry?.dispose(); [].concat(o.material || []).forEach(m => m.dispose()); });
+      st.renderer.dispose(); st.renderer.domElement.remove(); st.labels.domElement.remove();
+      s.current = null;
+    };
+  }, []);
+
+  // 2. éléments : reconstruits quand la liste ou le thème change
+  useEffect(() => {
+    const st = s.current; if (!st || !bereit) return;
+    const { THREE, gruppe, scene } = st;
+    gruppe.traverse(o => { o.geometry?.dispose(); [].concat(o.material || []).forEach(m => m.dispose()); o.element?.remove(); });
+    gruppe.clear(); st.objekte.clear();
+    const f = farben(dunkel), hg = dunkel ? "#0f1418" : "#eef2f5";
+    scene.background = new THREE.Color(hg); scene.fog = new THREE.Fog(hg, 180, 480);
+    st.boden.material.color.set(dunkel ? "#151d24" : "#e3e8ec");
+    for (const roh of anlagen) {
+      const a = wSicher(roh);
+      // mode « Zustand » : vert / orange / rouge selon les avertissements, gris sans données d'énergie
+      const zf = zustandAn ? ZUSTAND_FARBE[a.zustand?.stufe] : null;
+      const farbe = zf || (zustandAn && a.typ !== "halle" ? (dunkel ? "#55626e" : "#a7b0b8") : wFarbe(a, f));
+      const o = w3dBauen(THREE, a, farbe, dunkel);
+      if (a.zustand?.stillstand) o.userData.anim = null;           // machine arrêtée : elle ne bouge plus
+      o.position.set(a.x, 0, a.z); o.rotation.y = -(a.drehung * Math.PI) / 180;
+      const div = document.createElement("div");
+      div.className = `w3d-label${a.typ === "halle" ? " halle" : ""}`; div.textContent = a.name;
+      if (zustandAn && a.zustand?.meldungen?.length) {
+        const badge = document.createElement("span");
+        badge.className = `w3d-badge ${a.zustand.stufe}`; badge.textContent = a.zustand.stillstand ? "Stillstand" : a.zustand.meldungen.length; div.appendChild(badge);
+      }
+      if (zustandAn && a.typ !== "halle" && a.zustand?.stufe === "kritisch") {
+        const rr = Math.max(a.breite, a.tiefe) * 0.75;
+        const ring = new THREE.Mesh(new THREE.RingGeometry(rr, rr + 0.5, 48),
+          new THREE.MeshBasicMaterial({ color: ZUSTAND_FARBE.kritisch, transparent: true, opacity: 0.7, side: THREE.DoubleSide, depthWrite: false }));
+        ring.rotation.x = -Math.PI / 2; ring.position.y = 0.25; ring.userData.pickbar = false; o.add(ring);
+        const vorher = o.userData.anim;
+        o.userData.anim = (sek) => { vorher?.(sek); const k = (sek * 0.8) % 1; ring.scale.setScalar(1 + k * 0.6); ring.material.opacity = 0.75 * (1 - k); };
+      }
+      const label = new st.CSS2DObject(div);
+      label.position.set(0, a.typ === "halle" ? a.hoehe * 1.16 + 0.8 : a.hoehe + 1.4, a.typ === "halle" ? -a.tiefe / 2 : 0);
+      o.add(label);
+      const liveZeile = document.createElement("div"); liveZeile.className = "w3d-live"; liveZeile.style.display = "none"; div.appendChild(liveZeile);
+      Object.assign(o.userData, { id: a.id, typ: a.typ, a, label: div, liveZeile });
+      gruppe.add(o); st.objekte.set(a.id, o);
+    }
+    st.markieren();
+    if (!st.erstesMal && anlagen.length) { st.erstesMal = true; st.heim(true); }
+  }, [anlagen, dunkel, bereit, zustandAn]);
+
+  useEffect(() => { const st = s.current; if (st && bereit) st.labels.domElement.style.display = beschriftung ? "" : "none"; }, [beschriftung, bereit]);
+  useEffect(() => {
+    const st = s.current; if (!st || !bereit) return;
+    st.markieren();
+    const o = auswahl && st.objekte.get(auswahl);
+    if (o) st.fokus(o.userData.a);
+  }, [auswahl, bereit]);
+  useEffect(() => { if (heim && s.current) s.current.heim(); }, [heim]);
+  useEffect(() => { const st = s.current; if (st && bereit) st.animiert = !!animiert; }, [animiert, bereit]);
+  // valeurs en temps réel : étiquette mise à jour sans reconstruire la scène ; la machine ne bouge que si elle tourne
+  useEffect(() => {
+    const st = s.current; if (!st || !bereit) return;
+    for (const [id, o] of st.objekte) {
+      const l = live?.[id], el = o.userData.liveZeile;
+      o.userData.laeuft = !l || l.status === "lauf" || l.status === "daten";
+      if (!el) continue;
+      el.style.display = l ? "" : "none";
+      if (l) { el.className = `w3d-live ${l.status}`; el.textContent = liveKurz(l); }
+    }
+  }, [live, bereit, anlagen, zustandAn]);
+  useEffect(() => {
+    const st = s.current; if (!st || !bereit) return;
+    st.controls.autoRotate = !!drehen; st.controls.autoRotateSpeed = drehen === "langsam" ? 0.35 : 0.8;
+  }, [drehen, bereit]);
+
+  return (
+    <div className="w3d">
+      <div ref={buehne} className="w3d-buehne" />
+      {!bereit && !fehler && <Flex className="w3d-hinweis" vertical align="center" justify="center" gap={8}><BuildOutlined style={{ fontSize: 32, opacity: .5 }} /><Text type="secondary">3D-Ansicht wird geladen …</Text></Flex>}
+      {fehler && <div className="w3d-hinweis"><Result status="warning" title="3D-Ansicht nicht verfügbar" subTitle={`${fehler} Die Liste rechts funktioniert trotzdem.`} /></div>}
+      {bereit && hilfe && <div className="w3d-hilfe">Ziehen: drehen · Rechte Maustaste: verschieben · Mausrad: zoomen · Klick: Dokumentation</div>}
+      {bereit && children}
+    </div>
+  );
+}
+
+// =====================================================================
+// Maintenance et pannes (Wartung & Störungen)
+// =====================================================================
+const W_EINHEIT = { tage: "Tage", wochen: "Wochen", monate: "Monate" };
+const W_EINHEIT_1 = { tage: "Tag", wochen: "Woche", monate: "Monat" };
+const intervallText = (p) => `alle ${p.intervall === 1 ? "" : `${p.intervall} `}${p.intervall === 1 ? W_EINHEIT_1[p.einheit] : W_EINHEIT[p.einheit]}`;
+function naechsteWartung(p) {
+  if (!p.letzte) return null;
+  const d = dayjs(p.letzte);
+  return (p.einheit === "monate" ? d.add(p.intervall, "month") : d.add(p.intervall * (p.einheit === "wochen" ? 7 : 1), "day")).format("YYYY-MM-DD");
+}
+function wartungStatus(p) {
+  const n = naechsteWartung(p), heute = dayjs().format("YYYY-MM-DD");
+  if (!n) return "erst";
+  if (n < heute) return "ueberfaellig";
+  return n <= dayjs().add(7, "day").format("YYYY-MM-DD") ? "bald" : "ok";
+}
+const W_STATUS = { ueberfaellig: { name: "überfällig", farbe: "error" }, bald: { name: "bald fällig", farbe: "warning" },
+                   erst: { name: "noch nie durchgeführt", farbe: "warning" }, ok: { name: "geplant", farbe: "success" } };
+const STOER_STUFE = { stillstand: { name: "Stillstand", farbe: "error" }, eingeschraenkt: { name: "Eingeschränkt", farbe: "warning" } };
+const stoerStunden = (x) => Math.max(0, ((x.ende ? new Date(x.ende) : new Date()) - new Date(x.beginn)) / 3600000);
+const dauerText = (h) => (h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${dez(h, 1)} h` : `${dez(h / 24, 1)} Tage`);
+const LEER_WARTUNG = { plaene: [], stoerungen: [], darf: false };
+
+// une seule fenêtre pour : signaler / clôturer / modifier une panne, créer / modifier un plan, noter une maintenance faite
+function WartungDialog({ dialog, schliessen, anlagen, fertig }) {
+  const { message } = AntApp.useApp();
+  const [form] = Form.useForm();
+  const [laedt, setLaedt] = useState(false);
+  const art = dialog?.art;
+  const pflicht = [{ required: true, message: "Pflichtfeld" }];
+  const keineZukunft = (d) => d && d.isAfter(dayjs(), "day");
+  useEffect(() => {
+    if (!dialog) return;
+    form.resetFields();
+    const jetzt = dayjs();
+    if (art === "stoerung-neu") form.setFieldsValue({ anlage: dialog.anlage ?? undefined, stufe: "stillstand", beginn: jetzt });
+    if (art === "stoerung-beheben") form.setFieldsValue({ ende: jetzt, ursache: dialog.s.ursache, behebung: dialog.s.behebung });
+    if (art === "stoerung-bearbeiten") form.setFieldsValue({ ...dialog.s, beginn: dayjs(dialog.s.beginn), ende: dialog.s.ende ? dayjs(dialog.s.ende) : null });
+    if (art === "plan") form.setFieldsValue(dialog.p ? { ...dialog.p, letzte: dialog.p.letzte ? dayjs(dialog.p.letzte) : null }
+      : { anlage: dialog.anlage ?? undefined, intervall: 3, einheit: "monate", letzte: jetzt });
+    if (art === "erledigt") form.setFieldsValue({ datum: jetzt, notiz: "" });
+  }, [dialog]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function speichern() {
+    const w = await form.validateFields();
+    const zeit = (d) => (d ? d.toISOString() : null), tag = (d) => (d ? d.format("YYYY-MM-DD") : null);
+    const senden = (method, url, body) => api(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    setLaedt(true);
+    try {
+      let d;
+      if (art === "stoerung-neu") d = await senden("POST", "/api/stoerungen", { ...w, beginn: zeit(w.beginn) });
+      if (art === "stoerung-beheben") d = await senden("PUT", `/api/stoerungen/${dialog.s.id}`, { ...w, ende: zeit(w.ende) });
+      if (art === "stoerung-bearbeiten") d = await senden("PUT", `/api/stoerungen/${dialog.s.id}`, { ...w, beginn: zeit(w.beginn), ende: zeit(w.ende) });
+      if (art === "plan") d = await senden(dialog.p ? "PUT" : "POST", dialog.p ? `/api/wartung/plaene/${dialog.p.id}` : "/api/wartung/plaene", { ...w, letzte: tag(w.letzte) });
+      if (art === "erledigt") d = await senden("POST", `/api/wartung/plaene/${dialog.p.id}/erledigt`, { ...w, datum: tag(w.datum) });
+      message.success({ "stoerung-neu": "Störung gemeldet", "stoerung-beheben": "Störung als behoben eingetragen", "stoerung-bearbeiten": "Störung gespeichert",
+                        plan: dialog.p ? "Wartungsplan gespeichert" : "Wartungsplan angelegt", erledigt: "Wartung als erledigt eingetragen" }[art]);
+      schliessen(); fertig(d);
+    } catch (e) { if (e?.message) message.error(e.message, 6); }
+    finally { setLaedt(false); }
+  }
+
+  const anlageFeld = (
+    <Form.Item name="anlage" label="Halle oder Anlage" rules={pflicht}>
+      <Select showSearch optionFilterProp="label" placeholder="Bitte wählen" options={anlagen.map(a => ({ value: a.id, label: a.name }))} />
+    </Form.Item>
+  );
+  const titel = { "stoerung-neu": "Störung melden", "stoerung-beheben": "Störung beheben", "stoerung-bearbeiten": "Störung bearbeiten",
+                  plan: dialog?.p ? "Wartungsplan bearbeiten" : "Neuer Wartungsplan", erledigt: "Wartung erledigt" }[art];
+  const ok = { "stoerung-neu": "Störung melden", "stoerung-beheben": "Als behoben speichern", erledigt: "Als erledigt speichern" }[art] || "Speichern";
+  return (
+    <Modal open={!!dialog} title={<Space>{art?.startsWith("stoerung") ? <WarningOutlined /> : <ToolOutlined />}{titel}</Space>}
+      onCancel={schliessen} onOk={speichern} confirmLoading={laedt} okText={ok} cancelText="Abbrechen" okButtonProps={{ danger: art === "stoerung-neu" }}>
+      <Form form={form} layout="vertical" requiredMark={false}>
+        {(art === "stoerung-neu" || art === "stoerung-bearbeiten") && (<>
+          {anlageFeld}
+          <Form.Item name="titel" label="Was ist passiert?" rules={pflicht}><Input maxLength={150} placeholder="z. B. Hydraulikleck, Antrieb ausgefallen" /></Form.Item>
+          <Form.Item name="stufe" label="Auswirkung">
+            <Segmented block options={[{ value: "stillstand", label: "Anlage steht" }, { value: "eingeschraenkt", label: "Läuft eingeschränkt" }]} />
+          </Form.Item>
+          <Form.Item name="beginn" label="Seit" rules={pflicht}><DatePicker showTime format="DD.MM.YYYY HH:mm" style={{ width: "100%" }} disabledDate={keineZukunft} /></Form.Item>
+          <Form.Item name="beschreibung" label="Beschreibung"><Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} maxLength={2000} placeholder="Was ist zu sehen oder zu hören? Was wurde schon versucht?" /></Form.Item>
+        </>)}
+        {art === "stoerung-beheben" && (
+          <Alert type="info" showIcon style={{ marginBottom: 16 }} message={dialog.s.titel}
+            description={`Seit ${dayjs(dialog.s.beginn).format("DD.MM.YYYY HH:mm")}, bisher ${dauerText(stoerStunden(dialog.s))}`} />
+        )}
+        {(art === "stoerung-beheben" || art === "stoerung-bearbeiten") && (<>
+          <Form.Item name="ende" label={art === "stoerung-beheben" ? "Behoben am" : "Behoben am (leer = noch offen)"} rules={art === "stoerung-beheben" ? pflicht : []}>
+            <DatePicker showTime format="DD.MM.YYYY HH:mm" style={{ width: "100%" }} disabledDate={keineZukunft} />
+          </Form.Item>
+          <Form.Item name="ursache" label="Ursache"><Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} maxLength={1000} /></Form.Item>
+          <Form.Item name="behebung" label="Was wurde gemacht?"><Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} maxLength={1000} /></Form.Item>
+        </>)}
+        {art === "plan" && (<>
+          {anlageFeld}
+          <Form.Item name="titel" label="Aufgabe" rules={pflicht}><Input maxLength={150} placeholder="z. B. Hydrauliköl wechseln" /></Form.Item>
+          <Row gutter={12}>
+            <Col span={10}><Form.Item name="intervall" label="Alle" rules={pflicht}><InputNumber min={1} max={1000} precision={0} style={{ width: "100%" }} /></Form.Item></Col>
+            <Col span={14}><Form.Item name="einheit" label="Einheit"><Select options={Object.entries(W_EINHEIT).map(([k, v]) => ({ value: k, label: v }))} /></Form.Item></Col>
+          </Row>
+          <Form.Item name="letzte" label="Zuletzt durchgeführt" extra="Leer lassen, wenn die Arbeit noch nie gemacht wurde."><DatePicker format="DD.MM.YYYY" style={{ width: "100%" }} disabledDate={keineZukunft} /></Form.Item>
+          <Form.Item name="verantwortlich" label="Verantwortlich"><Input maxLength={120} placeholder="Name oder Abteilung" /></Form.Item>
+          <Form.Item name="beschreibung" label="Anleitung und Hinweise"><Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} maxLength={2000} placeholder="Material, Ölsorte, Sicherheitshinweise …" /></Form.Item>
+        </>)}
+        {art === "erledigt" && (<>
+          <Alert type="info" showIcon style={{ marginBottom: 16 }} message={dialog.p.titel}
+            description={`${intervallText(dialog.p)}${dialog.p.letzte ? `, zuletzt am ${dayjs(dialog.p.letzte).format("DD.MM.YYYY")}` : ", noch nie durchgeführt"}`} />
+          <Form.Item name="datum" label="Durchgeführt am" rules={pflicht}><DatePicker format="DD.MM.YYYY" style={{ width: "100%" }} disabledDate={keineZukunft} /></Form.Item>
+          <Form.Item name="notiz" label="Notiz"><Input.TextArea autoSize={{ minRows: 2, maxRows: 5 }} maxLength={1000} placeholder="z. B. Filter getauscht, Dichtung beim nächsten Mal prüfen" /></Form.Item>
+        </>)}
+      </Form>
+    </Modal>
+  );
+}
+
+// onglet « Wartung » de la fiche d'un élément (Werksplan)
+function WartungAnlage({ a, wartung, darf, setDialog }) {
+  const plaene = wartung.plaene.filter(p => p.anlage === a.id).sort((x, y) => (naechsteWartung(x) || "0").localeCompare(naechsteWartung(y) || "0"));
+  const stoer = wartung.stoerungen.filter(s => s.anlage === a.id);
+  const offen = stoer.filter(s => !s.ende), frueher = stoer.filter(s => s.ende).slice(0, 5);
+  return (
+    <Flex vertical gap={16}>
+      {offen.map(s => (
+        <Alert key={s.id} type={s.stufe === "stillstand" ? "error" : "warning"} showIcon
+          message={<b>{STOER_STUFE[s.stufe].name}: {s.titel}</b>}
+          description={<>{s.beschreibung && <div>{s.beschreibung}</div>}
+            <Text type="secondary" style={{ fontSize: 12 }}>seit {dayjs(s.beginn).format("DD.MM.YYYY HH:mm")} ({dauerText(stoerStunden(s))}), gemeldet von {s.gemeldetVon}</Text></>}
+          action={darf && <Button size="small" type="primary" onClick={() => setDialog({ art: "stoerung-beheben", s })}>Behoben</Button>} />
+      ))}
+      <Button danger icon={<WarningOutlined />} onClick={() => setDialog({ art: "stoerung-neu", anlage: a.id })}>Störung melden</Button>
+      <div>
+        <Flex justify="space-between" align="center">
+          <Text strong>Wartungsplan</Text>
+          {darf && <Button size="small" type="link" icon={<PlusOutlined />} onClick={() => setDialog({ art: "plan", anlage: a.id })} style={{ padding: 0 }}>Arbeit hinzufügen</Button>}
+        </Flex>
+        {!plaene.length ? <Text type="secondary" style={{ display: "block", marginTop: 4 }}>Noch keine Wartungsarbeiten geplant.</Text> : (
+          <Flex vertical gap={6} style={{ marginTop: 6 }}>
+            {plaene.map(p => {
+              const st = wartungStatus(p), n = naechsteWartung(p);
+              return (
+                <div key={p.id} className="w-karte">
+                  <Flex justify="space-between" gap={8} align="start">
+                    <div style={{ minWidth: 0 }}><b>{p.titel}</b>
+                      <div><Text type="secondary" style={{ fontSize: 12 }}>{intervallText(p)}{p.verantwortlich ? `, ${p.verantwortlich}` : ""}</Text></div></div>
+                    <Tooltip title={W_STATUS[st].name}><Tag color={W_STATUS[st].farbe} bordered={false} style={{ marginInlineEnd: 0 }}>{n ? dayjs(n).format("DD.MM.YYYY") : "offen"}</Tag></Tooltip>
+                  </Flex>
+                  {darf && <Space size={4} style={{ marginTop: 6 }}>
+                    <Button size="small" icon={<CheckOutlined />} onClick={() => setDialog({ art: "erledigt", p })}>Erledigt</Button>
+                    <Button size="small" type="text" icon={<EditOutlined />} onClick={() => setDialog({ art: "plan", p })} aria-label="Wartungsplan bearbeiten" />
+                  </Space>}
+                </div>
+              );
+            })}
+          </Flex>
+        )}
+      </div>
+      {frueher.length > 0 && (
+        <div><Text strong>Letzte Störungen</Text>
+          <ul className="w3d-liste">{frueher.map(s => <li key={s.id}>{dayjs(s.beginn).format("DD.MM.YYYY")}: {s.titel} <Text type="secondary">({dauerText(stoerStunden(s))})</Text></li>)}</ul></div>
+      )}
+    </Flex>
+  );
+}
+
+// page « Wartung & Störungen » : toutes les installations
+function WartungSeite({ wartung, setWartung, laden, jahr, dunkel }) {
+  const { message } = AntApp.useApp();
+  const [anlagen, setAnlagen] = useState([]);
+  const [dialog, setDialog] = useState(null);
+  const [tab, setTab] = useState("stoerungen");
+  const [filter, setFilter] = useState("offen");
+  const [anlage, setAnlage] = useState(null);
+  const f = farben(dunkel);
+  const darf = wartung.darf;
+  useEffect(() => { api("/api/anlagen").then(d => setAnlagen(d.liste)).catch(() => {}); laden(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const name = (id) => anlagen.find(a => a.id === id)?.name ?? "(gelöscht)";
+  const zumWerk = (id) => { location.hash = `werk/${id}`; };
+  const loeschen = async (url, text) => { try { setWartung(await api(url, { method: "DELETE" })); message.success(text); } catch (e) { message.error(e.message, 6); } };
+
+  const imJahr = wartung.stoerungen.filter(s => dayjs(s.beginn).year() === jahr);
+  const offen = wartung.stoerungen.filter(s => !s.ende);
+  const stillstandH = imJahr.filter(s => s.stufe === "stillstand").reduce((x, s) => x + stoerStunden(s), 0);
+  const behoben = imJahr.filter(s => s.ende);
+  const mttr = behoben.length ? behoben.reduce((x, s) => x + stoerStunden(s), 0) / behoben.length : null;
+  const plaene = wartung.plaene.map(p => ({ ...p, naechste: naechsteWartung(p), status: wartungStatus(p) }));
+  const ueber = plaene.filter(p => p.status === "ueberfaellig");
+  const in30 = plaene.filter(p => p.status === "erst" || (p.status !== "ueberfaellig" && p.naechste <= dayjs().add(30, "day").format("YYYY-MM-DD")));
+  const proAnlage = Object.values(imJahr.reduce((g, s) => {
+    const z = (g[s.anlage] ||= { monat: name(s.anlage), stillstand: 0, eingeschraenkt: 0 });
+    z[s.stufe] = Math.round((z[s.stufe] + stoerStunden(s)) * 10) / 10; return g;
+  }, {})).sort((x, y) => (y.stillstand + y.eingeschraenkt) - (x.stillstand + x.eingeschraenkt));
+
+  const stoerListe = wartung.stoerungen.filter(s => (filter === "offen" ? !s.ende : filter === "jahr" ? dayjs(s.beginn).year() === jahr : true) && (!anlage || s.anlage === anlage));
+  const planListe = plaene.filter(p => !anlage || p.anlage === anlage)
+    .sort((x, y) => ({ ueberfaellig: 0, erst: 1, bald: 2, ok: 3 }[x.status] - { ueberfaellig: 0, erst: 1, bald: 2, ok: 3 }[y.status]) || (x.naechste || "").localeCompare(y.naechste || ""));
+  const anlageSpalte = { title: <Space size={4}><BuildOutlined />Anlage</Space>, dataIndex: "anlage", render: id => <a onClick={() => zumWerk(id)}>{name(id)}</a>,
+                         sorter: (x, y) => name(x.anlage).localeCompare(name(y.anlage), "de") };
+
+  return (
+    <Flex vertical gap={16}>
+      <Flex justify="space-between" align="flex-end" wrap gap={12}>
+        <Kopf titel="Wartung und Störungen" text="Störungen melden und beheben, Wartungsarbeiten planen und abhaken. Alles ist mit dem Werksplan 3D verknüpft." />
+        <Space wrap>
+          {darf && <Button icon={<PlusOutlined />} onClick={() => setDialog({ art: "plan" })}>Neue Wartungsarbeit</Button>}
+          <Button type="primary" danger icon={<WarningOutlined />} onClick={() => setDialog({ art: "stoerung-neu" })}>Störung melden</Button>
+        </Space>
+      </Flex>
+
+      <Row gutter={[16, 16]}>
+        <Kpi titel="Offene Störungen" icon={<WarningOutlined />} value={offen.length} valueStyle={{ color: offen.length ? "#CF4B3B" : "#2F9E8F" }}>
+          <Text type="secondary">{offen.length ? `davon ${offen.filter(s => s.stufe === "stillstand").length} mit Stillstand` : "alle Anlagen laufen"}</Text>
+        </Kpi>
+        <Kpi titel={`Stillstand ${jahr}`} icon={<ClockCircleOutlined />} value={stillstandH} formatter={v => `${dez(v, 1)} h`}>
+          <Text type="secondary">{imJahr.length} Störungen im Jahr</Text>
+        </Kpi>
+        <Kpi titel="Mittlere Reparaturzeit" icon={<ToolOutlined />} value={mttr == null ? "–" : dauerText(mttr)}>
+          <Text type="secondary">MTTR {jahr}, {behoben.length} behobene Störungen</Text>
+        </Kpi>
+        <Kpi titel="Wartung überfällig" icon={<ScheduleOutlined />} value={ueber.length} valueStyle={{ color: ueber.length ? "#CF4B3B" : undefined }}>
+          <Text type="secondary">{in30.length} in den nächsten 30 Tagen fällig</Text>
+        </Kpi>
+      </Row>
+
+      <Flex gap={8} wrap align="center" className="filter-leiste">
+        <Text strong><FilterOutlined /> Filter</Text>
+        <Select value={anlage} onChange={setAnlage} allowClear placeholder="Alle Hallen und Anlagen" style={{ width: 240 }} prefix={<BuildOutlined />}
+          options={anlagen.map(a => ({ value: a.id, label: a.name }))} aria-label="Anlage" />
+      </Flex>
+
+      <Tabs activeKey={tab} onChange={setTab} items={[
+        { key: "stoerungen", label: <Space><WarningOutlined />Störungen{offen.length ? <Badge count={offen.length} size="small" /> : null}</Space>, children: (
+          <Flex vertical gap={16}>
+            {proAnlage.length > 0 && (
+              <Card title={<Space><BarChartOutlined />Störungsstunden je Anlage {jahr}</Space>} extra={<Legende reihen={[{ key: "s", name: "Stillstand", farbe: "#CF4B3B" }, { key: "e", name: "Eingeschränkt", farbe: "#E39A2D" }]} />}>
+                <StapelBalken data={proAnlage} f={f} hoehe={220} format={v => `${dez(v, 1)} h`}
+                  reihen={[{ key: "stillstand", name: "Stillstand", farbe: "#CF4B3B" }, { key: "eingeschraenkt", name: "Eingeschränkt", farbe: "#E39A2D" }]} />
+              </Card>
+            )}
+            <Card styles={{ body: { padding: 0 } }} title={<Segmented value={filter} onChange={setFilter} options={[
+                { value: "offen", label: `Offen (${offen.length})` }, { value: "jahr", label: `${jahr} (${imJahr.length})` }, { value: "alle", label: "Alle" }]} />}
+              extra={<Button icon={<DownloadOutlined />} disabled={!stoerListe.length} onClick={() => csvHerunterladen(`Stoerungen_${dayjs().format("YYYY-MM-DD")}.csv`,
+                ["Anlage", "Störung", "Auswirkung", "Beginn", "Ende", "Dauer h", "Ursache", "Behebung", "Gemeldet von", "Behoben von"],
+                stoerListe.map(s => [name(s.anlage), s.titel, STOER_STUFE[s.stufe].name, dayjs(s.beginn).format("DD.MM.YYYY HH:mm"), s.ende ? dayjs(s.ende).format("DD.MM.YYYY HH:mm") : "",
+                  stoerStunden(s).toFixed(2).replace(".", ","), s.ursache, s.behebung, s.gemeldetVon, s.behobenVon]))}>CSV</Button>}>
+              <Table rowKey="id" size="middle" dataSource={stoerListe} className="kopf-nowrap" scroll={{ x: "max-content" }} pagination={{ pageSize: 15, hideOnSinglePage: true }}
+                locale={{ emptyText: <Result status="success" icon={<CheckCircleOutlined style={{ color: "#2F9E8F" }} />} title={filter === "offen" ? "Keine offenen Störungen" : "Keine Störungen erfasst"} /> }}
+                columns={[
+                  anlageSpalte,
+                  { title: "Störung", dataIndex: "titel", width: 300, render: (t, s) => <Flex vertical><b>{t}</b>{s.beschreibung && <Text type="secondary" ellipsis={{ tooltip: s.beschreibung }} style={{ fontSize: 12, maxWidth: 280 }}>{s.beschreibung}</Text>}</Flex> },
+                  { title: "Auswirkung", dataIndex: "stufe", render: x => <Tag color={STOER_STUFE[x].farbe} bordered={false}>{STOER_STUFE[x].name}</Tag> },
+                  { title: <Space size={4}><ClockCircleOutlined />Beginn</Space>, dataIndex: "beginn", render: z => dayjs(z).format("DD.MM.YYYY HH:mm"), sorter: (x, y) => x.beginn.localeCompare(y.beginn), defaultSortOrder: "descend" },
+                  { title: "Dauer", key: "dauer", render: (_, s) => s.ende ? dauerText(stoerStunden(s)) : <Tag color="error" bordered={false}>offen, {dauerText(stoerStunden(s))}</Tag>,
+                    sorter: (x, y) => stoerStunden(x) - stoerStunden(y) },
+                  { title: "Ursache und Behebung", key: "u", width: 280, render: (_, s) => !s.ursache && !s.behebung ? <Text type="secondary">–</Text>
+                      : <Text ellipsis={{ tooltip: [s.ursache, s.behebung].filter(Boolean).join(" · ") }} style={{ maxWidth: 260 }}>{[s.ursache, s.behebung].filter(Boolean).join(" · ")}</Text> },
+                  { title: <Space size={4}><UserOutlined />Gemeldet</Space>, dataIndex: "gemeldetVon" },
+                  { title: "", key: "a", fixed: "right", render: (_, s) => !darf ? null : (
+                    <Space size={0}>
+                      {!s.ende && <Button size="small" type="primary" onClick={() => setDialog({ art: "stoerung-beheben", s })}>Behoben</Button>}
+                      <Tooltip title="Bearbeiten"><Button type="text" icon={<EditOutlined />} onClick={() => setDialog({ art: "stoerung-bearbeiten", s })} aria-label="Bearbeiten" /></Tooltip>
+                      <Popconfirm title="Störung löschen?" okText="Löschen" cancelText="Abbrechen" okButtonProps={{ danger: true }} onConfirm={() => loeschen(`/api/stoerungen/${s.id}`, "Störung gelöscht")}>
+                        <Tooltip title="Löschen"><Button type="text" danger icon={<DeleteOutlined />} aria-label="Löschen" /></Tooltip></Popconfirm>
+                    </Space>) }
+                ]} />
+            </Card>
+          </Flex>
+        ) },
+        { key: "plan", label: <Space><ToolOutlined />Wartungsplan{ueber.length ? <Badge count={ueber.length} size="small" color="#E39A2D" /> : null}</Space>, children: (
+          <Card styles={{ body: { padding: 0 } }}
+            extra={<Button icon={<DownloadOutlined />} disabled={!planListe.length} onClick={() => csvHerunterladen(`Wartungsplan_${dayjs().format("YYYY-MM-DD")}.csv`,
+              ["Anlage", "Aufgabe", "Intervall", "Verantwortlich", "Zuletzt", "Nächste", "Status"],
+              planListe.map(p => [name(p.anlage), p.titel, intervallText(p), p.verantwortlich, p.letzte ? dayjs(p.letzte).format("DD.MM.YYYY") : "", p.naechste ? dayjs(p.naechste).format("DD.MM.YYYY") : "", W_STATUS[p.status].name]))}>CSV</Button>}>
+            <Table rowKey="id" size="middle" dataSource={planListe} className="kopf-nowrap" scroll={{ x: "max-content" }} pagination={{ pageSize: 20, hideOnSinglePage: true }}
+              locale={{ emptyText: <Empty description="Noch keine Wartungsarbeiten geplant." /> }}
+              expandable={{ rowExpandable: p => p.historie?.length > 0, expandedRowRender: p => (
+                <Flex vertical gap={4}>{p.historie.slice(0, 20).map(h => <Text key={h.id}><CheckOutlined style={{ color: "#2F9E8F" }} /> {dayjs(h.datum).format("DD.MM.YYYY")}, {h.wer}{h.notiz ? `: ${h.notiz}` : ""}</Text>)}</Flex>) }}
+              columns={[
+                anlageSpalte,
+                { title: "Aufgabe", dataIndex: "titel", width: 300, render: (t, p) => <Flex vertical><b>{t}</b>{p.beschreibung && <Text type="secondary" ellipsis={{ tooltip: p.beschreibung }} style={{ fontSize: 12, maxWidth: 280 }}>{p.beschreibung}</Text>}</Flex> },
+                { title: "Intervall", key: "i", render: (_, p) => intervallText(p) },
+                { title: <Space size={4}><UserOutlined />Verantwortlich</Space>, dataIndex: "verantwortlich", render: v => v || <Text type="secondary">–</Text> },
+                { title: "Zuletzt", dataIndex: "letzte", render: d => (d ? dayjs(d).format("DD.MM.YYYY") : <Text type="secondary">nie</Text>) },
+                { title: <Space size={4}><ScheduleOutlined />Nächste</Space>, dataIndex: "naechste", sorter: (x, y) => (x.naechste || "0").localeCompare(y.naechste || "0"),
+                  render: (d, p) => <Tag color={W_STATUS[p.status].farbe} bordered={false}>{d ? dayjs(d).format("DD.MM.YYYY") : W_STATUS[p.status].name}{d && p.status !== "ok" ? `, ${W_STATUS[p.status].name}` : ""}</Tag> },
+                { title: "", key: "a", fixed: "right", render: (_, p) => !darf ? null : (
+                  <Space size={0}>
+                    <Button size="small" icon={<CheckOutlined />} onClick={() => setDialog({ art: "erledigt", p })}>Erledigt</Button>
+                    <Tooltip title="Bearbeiten"><Button type="text" icon={<EditOutlined />} onClick={() => setDialog({ art: "plan", p })} aria-label="Bearbeiten" /></Tooltip>
+                    <Popconfirm title="Wartungsarbeit löschen?" description="Die Historie dieser Arbeit wird ebenfalls gelöscht." okText="Löschen" cancelText="Abbrechen" okButtonProps={{ danger: true }}
+                      onConfirm={() => loeschen(`/api/wartung/plaene/${p.id}`, "Wartungsarbeit gelöscht")}>
+                      <Tooltip title="Löschen"><Button type="text" danger icon={<DeleteOutlined />} aria-label="Löschen" /></Tooltip></Popconfirm>
+                  </Space>) }
+              ]} />
+          </Card>
+        ) }
+      ]} />
+
+      <WartungDialog dialog={dialog} schliessen={() => setDialog(null)} anlagen={anlagen} fertig={(d) => (d ? setWartung(d) : laden())} />
+    </Flex>
+  );
+}
+
+// =====================================================================
+// Données en temps réel (Live) : état et valeurs lus dans la base toutes les 10 secondes
+// =====================================================================
+const ZAHL_TYP = /int|decimal|numeric|money|float|real/i;
+const LIVE_STATUS = {
+  lauf: { name: "Läuft", farbe: "#2F9E8F", tag: "success", badge: "success" },
+  stopp: { name: "Steht", farbe: "#8C99A6", tag: "default", badge: "default" },
+  stoerung: { name: "Störung", farbe: "#CF4B3B", tag: "error", badge: "error" },
+  veraltet: { name: "Keine aktuellen Daten", farbe: "#E39A2D", tag: "warning", badge: "warning" },
+  keine: { name: "Keine Daten", farbe: "#8C99A6", tag: "default", badge: "default" },
+  fehler: { name: "Fehler beim Lesen", farbe: "#CF4B3B", tag: "error", badge: "error" },
+  daten: { name: "Live", farbe: "#4F83AA", tag: "blue", badge: "processing" }
+};
+const liveZahl = (v) => (typeof v !== "number" ? (v ?? "–") : Math.abs(v) >= 100 ? zahl(v) : dez(v, 2));
+const alterText = (sek) => (sek == null ? "" : sek < 60 ? "gerade eben" : sek < 3600 ? `vor ${Math.round(sek / 60)} min` : sek < 172800 ? `vor ${dez(sek / 3600, 1)} h` : `vor ${Math.round(sek / 86400)} Tagen`);
+const liveKurz = (l) => {
+  const w = (l?.werte || []).find(x => typeof x.wert === "number");
+  return `${LIVE_STATUS[l?.status]?.name ?? ""}${w && !["fehler", "keine"].includes(l.status) ? ` · ${liveZahl(w.wert)}${w.einheit ? ` ${w.einheit}` : ""}` : ""}`;
+};
+
+function LiveKarte({ l }) {
+  if (!l) return null;
+  const s = LIVE_STATUS[l.status] || LIVE_STATUS.daten;
+  return (
+    <Card size="small" title={<Space><Badge status={s.badge} />Live aus der Datenbank</Space>} extra={<Tag color={s.tag} bordered={false} style={{ marginInlineEnd: 0 }}>{s.name}</Tag>}>
+      {l.status === "fehler" ? <Text type="danger">{l.fehler}</Text> : !l.zeit ? <Text type="secondary">Die Tabelle liefert für diesen Filter keine Zeile.</Text> : (
+        <Flex vertical gap={8}>
+          {l.werte?.length > 0 && <div className="live-werte">{l.werte.map(w => <div key={w.name}><span>{w.name}</span><b className="zahl">{liveZahl(w.wert)}{w.einheit ? <small> {w.einheit}</small> : null}</b></div>)}</div>}
+          {l.verlauf?.length > 2 && (
+            <ResponsiveContainer width="100%" height={70}>
+              <LineChart data={l.verlauf} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+                <YAxis hide domain={["auto", "auto"]} />
+                <ChartTooltip formatter={(v) => [liveZahl(v), l.werte?.[0]?.name]} labelFormatter={(_, p) => p?.[0]?.payload?.t ?? ""} />
+                <Line dataKey="v" dot={false} stroke={s.farbe} strokeWidth={2} isAnimationActive={false} type="monotone" />
+              </LineChart>
+            </ResponsiveContainer>
+          )}
+          <Text type="secondary" style={{ fontSize: 12 }}>Letzter Wert {l.zeit} ({alterText(l.alterSek)}){l.rohStatus != null ? `, Status „${l.rohStatus}“` : ""}</Text>
+        </Flex>
+      )}
+    </Card>
+  );
+}
+
+// partie « Live-Daten » de la fenêtre d'édition d'un élément
+function LiveEinstellung({ form, offen }) {
+  const { message } = AntApp.useApp();
+  const [tabellen, setTabellen] = useState([]);
+  const [spalten, setSpalten] = useState([]);
+  const [test, setTest] = useState(null);
+  const [testet, setTestet] = useState(false);
+  const tabelle = Form.useWatch(["live", "tabelle"], form);
+  const statusSpalte = Form.useWatch(["live", "statusSpalte"], form);
+  useEffect(() => { if (offen && !tabellen.length) api("/api/tabellen").then(setTabellen).catch(() => {}); }, [offen]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    setTest(null);
+    if (!tabelle) { setSpalten([]); return; }
+    api(`/api/live/spalten?tabelle=${encodeURIComponent(tabelle)}`).then(d => setSpalten(d.spalten)).catch(e => { setSpalten([]); message.error(e.message, 6); });
+  }, [tabelle]); // eslint-disable-line react-hooks/exhaustive-deps
+  const opt = (filter) => spalten.filter(filter || (() => true)).map(s => ({ value: s.spalte, label: <span>{s.spalte} <Text type="secondary" style={{ fontSize: 12 }}>{s.typ}</Text></span>, title: s.spalte }));
+  const istZeit = (s) => /date|time/i.test(s.typ);
+  const istZahl = (s) => ZAHL_TYP.test(s.typ);
+  async function testen() {
+    setTestet(true); setTest(null);
+    try { setTest({ ok: true, ...(await api("/api/live/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ live: form.getFieldValue("live") }) })) }); }
+    catch (e) { setTest({ ok: false, fehler: e.message }); }
+    finally { setTestet(false); }
+  }
+  return (
+    <>
+      <Form.Item name={["live", "tabelle"]} label="Tabelle" extra="Tabelle mit laufend neuen Zeilen (z. B. Maschinendaten, Zählerstände). Leer = keine Live-Daten.">
+        <Select allowClear showSearch optionFilterProp="label" placeholder="keine Live-Daten"
+          options={tabellen.map(t => ({ value: `${t.schema}.${t.tabelle}`, label: `${t.schema}.${t.tabelle}` }))} />
+      </Form.Item>
+      {tabelle && (<>
+        <Form.Item name={["live", "zeitSpalte"]} label="Zeitspalte" rules={[{ required: true, message: "Pflichtfeld" }]} extra="Die neueste Zeile nach dieser Spalte gilt als aktueller Stand.">
+          <Select showSearch options={opt(istZeit).length ? opt(istZeit) : opt()} placeholder="Datum/Uhrzeit" />
+        </Form.Item>
+        <Row gutter={8}>
+          <Col span={12}><Form.Item name={["live", "filterSpalte"]} label="Filter: Spalte" extra="Wenn die Tabelle mehrere Anlagen enthält"><Select allowClear showSearch options={opt()} placeholder="kein Filter" /></Form.Item></Col>
+          <Col span={12}><Form.Item name={["live", "filterWert"]} label="Filter: Wert"><Input placeholder="z. B. P1" maxLength={200} /></Form.Item></Col>
+        </Row>
+        <Form.Item name={["live", "statusSpalte"]} label="Statusspalte (optional)"><Select allowClear showSearch options={opt()} placeholder="keine" /></Form.Item>
+        {statusSpalte ? (
+          <Row gutter={8}>
+            <Col span={12}><Form.Item name={["live", "laufWerte"]} label="Werte für „läuft“"><Input placeholder="z. B. 1, RUN, Ein" /></Form.Item></Col>
+            <Col span={12}><Form.Item name={["live", "stoerWerte"]} label="Werte für „Störung“"><Input placeholder="z. B. 3, ERR" /></Form.Item></Col>
+          </Row>
+        ) : (
+          <Row gutter={8}>
+            <Col span={14}><Form.Item name={["live", "schwelleSpalte"]} label="Oder: läuft, wenn Spalte" extra="z. B. Leistung oder Strom"><Select allowClear showSearch options={opt(istZahl)} placeholder="keine" /></Form.Item></Col>
+            <Col span={10}><Form.Item name={["live", "schwelle"]} label="größer als"><InputNumber decimalSeparator="," style={{ width: "100%" }} placeholder="0" /></Form.Item></Col>
+          </Row>
+        )}
+        <Text strong>Angezeigte Werte (höchstens 4)</Text>
+        <Form.List name={["live", "werte"]}>{(felder, { add, remove }) => (
+          <div style={{ marginTop: 8, marginBottom: 12 }}>
+            {felder.map(({ key, name: n }) => (
+              <Flex key={key} gap={6} align="start">
+                <Form.Item name={[n, "spalte"]} style={{ flex: 1.3, marginBottom: 8 }} rules={[{ required: true, message: "Spalte" }]}><Select showSearch options={opt()} placeholder="Spalte" /></Form.Item>
+                <Form.Item name={[n, "name"]} style={{ flex: 1, marginBottom: 8 }}><Input placeholder="Anzeigename" maxLength={40} /></Form.Item>
+                <Form.Item name={[n, "einheit"]} style={{ width: 70, marginBottom: 8 }}><Input placeholder="kW" maxLength={12} /></Form.Item>
+                <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(n)} aria-label="Wert entfernen" />
+              </Flex>
+            ))}
+            {felder.length < 4 && <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({})}>Wert hinzufügen</Button>}
+          </div>
+        )}</Form.List>
+        <Form.Item name={["live", "maxAlterMin"]} label="Als veraltet melden nach" extra="Wenn länger keine neue Zeile kommt, erscheint die Anlage orange.">
+          <InputNumber min={1} max={10080} precision={0} style={{ width: "100%" }} suffix="Minuten" placeholder="15" />
+        </Form.Item>
+        <Button icon={<ThunderboltOutlined />} loading={testet} onClick={testen} block>Verbindung testen</Button>
+        {test && (test.ok
+          ? <Alert style={{ marginTop: 12 }} type={test.zeit ? "success" : "warning"} showIcon
+              message={test.zeit ? `${LIVE_STATUS[test.status]?.name}: letzte Zeile ${test.zeit} (${alterText(test.alterSek)})` : "Keine Zeile gefunden (Filter prüfen)."}
+              description={test.werte?.length ? test.werte.map(w => `${w.name}: ${liveZahl(w.wert)}${w.einheit ? ` ${w.einheit}` : ""}`).join(" · ") + (test.rohStatus != null ? ` · Status „${test.rohStatus}“` : "") : null} />
+          : <Alert style={{ marginTop: 12 }} type="error" showIcon message={test.fehler} />)}
+      </>)}
+    </>
+  );
+}
+
+function Werksplan({ en, massnahmen, warnungen, wartung = LEER_WARTUNG, setWartung, jahr, dunkel, darf, gehe }) {
+  const { message, notification } = AntApp.useApp();
+  const [d, setD] = useState(null);
+  const [fehler, setFehler] = useState("");
+  const [auswahl, setAuswahl] = useState(null);
+  const [beschriftung, setBeschriftung] = useState(true);
+  const [heim, setHeim] = useState(0);
+  const [suche, setSuche] = useState("");
+  const [bearbeiten, setBearbeiten] = useState(null);       // { a } ou { a: null } pour un nouvel élément
+  const [vorschau, setVorschau] = useState(null);
+  const [speichert, setSpeichert] = useState(false);
+  const [laedtHoch, setLaedtHoch] = useState(false);
+  const [animiert, setAnimiert] = useState(() => !matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const [tour, setTour] = useState(null);                   // { index, pause } pendant la présentation
+  const [dauer, setDauer] = useState(12);
+  const [voll, setVoll] = useState(false);
+  const rahmen = useRef(null);
+  const [zustandAn, setZustandAn] = useState(true);
+  const [doku, setDoku] = useState(null);                  // id de l'élément dont la documentation s'affiche dans la vue 3D
+  const [ansicht, setAnsicht] = useState(null);            // document ouvert dans la visionneuse
+  const [wDialog, setWDialog] = useState(null);            // fenêtres maintenance / pannes
+  const [appUrl, setAppUrl] = useState("");
+  const [qr, setQr] = useState(null);                      // { a, png, link }
+  const detailRef = useRef(null);
+  const hashFertig = useRef(false);
+  const screens = Grid.useBreakpoint();
+  const [form] = Form.useForm();
+  const typWert = Form.useWatch("typ", form);
+  const f = farben(dunkel);
+
+  useEffect(() => {
+    api("/api/anlagen").then(setD).catch(e => setFehler(e.message));
+    api("/api/status").then(x => setAppUrl(x.appUrl || "")).catch(() => {});
+  }, []);
+  const liste = d?.liste || [];
+
+  // données en temps réel : toutes les 10 secondes, seulement si l'onglet est visible
+  const [live, setLive] = useState({});
+  const [liveZeit, setLiveZeit] = useState(null);
+  const hatLive = liste.some(x => x.live?.tabelle);
+  useEffect(() => {
+    if (!hatLive) { setLive({}); return; }
+    let weg = false, t;
+    const holen = async () => {
+      if (document.visibilityState === "visible") {
+        try { const r = await api("/api/live"); if (!weg) { setLive(r.anlagen || {}); setLiveZeit(new Date()); } } catch { /* nouvel essai au prochain tour */ }
+      }
+      if (!weg) t = setTimeout(holen, 10000);
+    };
+    holen();
+    return () => { weg = true; clearTimeout(t); };
+  }, [hatLive, d]);
+  const liveSignatur = Object.entries(live).map(([k, v]) => `${k}:${v.status}`).join("|");
+
+  // état de chaque élément d'après les avertissements (page Warnungen) ; une halle prend le pire état de ses installations
+  // + pannes ouvertes (arrêt = critique) et maintenances en retard (avertissement)
+  const zustand = useMemo(() => {
+    const m = {};
+    const eigen = (x) => {
+      const offen = wartung.stoerungen.filter(s => s.anlage === x.id && !s.ende);
+      const plaene = wartung.plaene.filter(p => p.anlage === x.id);
+      const meldungen = [
+        ...offen.map(s => ({ id: `s-${s.id}`, stufe: s.stufe === "stillstand" ? "kritisch" : "warnung", titel: `${s.stufe === "stillstand" ? "Stillstand" : "Störung"}: ${s.titel}` })),
+        ...(x.seu ? (warnungen || []).filter(w => w.anlage === x.seu && w.stufe !== "info") : []),
+        ...plaene.filter(p => wartungStatus(p) === "ueberfaellig").map(p => ({ id: `w-${p.id}`, stufe: "warnung", titel: `Wartung überfällig: ${p.titel}` }))
+      ];
+      const l = live[x.id];
+      if (l?.status === "stoerung") meldungen.unshift({ id: `l-${x.id}`, stufe: "kritisch", titel: `Live: Störung (Status „${l.rohStatus}“)` });
+      if (l?.status === "veraltet") meldungen.push({ id: `l-${x.id}`, stufe: "warnung", titel: `Live: keine aktuellen Daten (letzter Wert ${alterText(l.alterSek)})` });
+      if (l?.status === "fehler") meldungen.push({ id: `l-${x.id}`, stufe: "warnung", titel: "Live-Daten können nicht gelesen werden" });
+      return { meldungen, stillstand: offen.some(s => s.stufe === "stillstand"), basis: !!x.seu || !!x.live?.tabelle || plaene.length > 0 || wartung.stoerungen.some(s => s.anlage === x.id) };
+    };
+    const stufeVon = (meldungen, basis) => (meldungen.some(w => w.stufe === "kritisch") ? "kritisch" : meldungen.length ? "warnung" : basis ? "ok" : null);
+    for (const x of liste) {
+      if (x.typ === "halle") continue;
+      const e = eigen(x);
+      m[x.id] = { stufe: stufeVon(e.meldungen, e.basis), meldungen: e.meldungen, stillstand: e.stillstand };
+    }
+    for (const h of liste.filter(x => x.typ === "halle")) {
+      const e = eigen(h), k = liste.filter(x => x.halle === h.id).map(x => m[x.id]).filter(Boolean);
+      const meldungen = [...e.meldungen, ...k.flatMap(z => z.meldungen)];
+      m[h.id] = { stufe: stufeVon(meldungen, e.basis || k.some(z => z.stufe)), meldungen };
+    }
+    return m;
+  }, [liste, warnungen, wartung, liveSignatur]); // eslint-disable-line react-hooks/exhaustive-deps
+  const anzeigen = useMemo(() => {
+    const l = !vorschau ? liste : liste.some(x => x.id === vorschau.id) ? liste.map(x => (x.id === vorschau.id ? vorschau : x)) : [...liste, vorschau];
+    return l.map(x => ({ ...x, zustand: zustand[x.id] }));
+  }, [liste, vorschau, zustand]);
+
+  // lien direct #werk/<id> (codes QR) : ouverture de la fiche, et adresse mise à jour à chaque sélection
+  useEffect(() => {
+    if (!d) return;
+    const lesen = () => {
+      const id = decodeURIComponent(location.hash.split("/")[1] || "");
+      if (!id || !d.liste.some(x => x.id === id)) return;
+      setAuswahl(id);
+      if (!screens.xl) setTimeout(() => detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 500);
+    };
+    if (!hashFertig.current) { lesen(); hashFertig.current = true; }
+    addEventListener("hashchange", lesen);
+    return () => removeEventListener("hashchange", lesen);
+  }, [d]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!hashFertig.current || !location.hash.startsWith("#werk")) return;
+    const ziel = `#werk${auswahl ? `/${auswahl}` : ""}`;
+    if (location.hash !== ziel) history.replaceState(null, "", ziel);
+  }, [auswahl]);
+
+  // --- codes QR ---
+  const istLokal = (u) => /\/\/(localhost|127\.|\[::1\])/i.test(u);
+  const qrBasis = (() => { const u = appUrl.replace(/\/$/, ""); return u && !istLokal(u) ? u : !istLokal(location.origin) ? location.origin : null; })();
+  const qrLink = (id) => `${qrBasis || location.origin}/#werk/${encodeURIComponent(id)}`;
+  async function qrZeigen(el) {
+    try {
+      const QR = (await import("qrcode")).default;
+      setQr({ a: el, link: qrLink(el.id), png: await QR.toDataURL(qrLink(el.id), { width: 640, margin: 1, errorCorrectionLevel: "M" }) });
+    } catch (e) { message.error(`QR-Code konnte nicht erstellt werden: ${e.message}`, 6); }
+  }
+  async function etikettenDrucken(elemente) {
+    try {
+      const QR = (await import("qrcode")).default;
+      const karten = await Promise.all(elemente.map(async x => ({ x, bild: await QR.toDataURL(qrLink(x.id), { width: 480, margin: 1, errorCorrectionLevel: "M" }) })));
+      const html = `<!doctype html><html lang="de"><head><meta charset="utf-8"><title>QR-Etiketten Werksplan</title><style>
+@page { size: A4; margin: 10mm; }
+body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; color: #1F2A33; }
+.raster { display: grid; grid-template-columns: repeat(3, 1fr); }
+.e { border: 1px dashed #b8c1c9; padding: 6mm 4mm 5mm; text-align: center; break-inside: avoid; }
+.e img { width: 42mm; height: 42mm; display: block; margin: 0 auto; }
+.e b { display: block; font-size: 15pt; margin-top: 2mm; }
+.e span { display: block; font-size: 8.5pt; color: #5F6B76; margin-top: 1mm; }
+</style></head><body><div class="raster">${karten.map(k => `<div class="e"><img src="${k.bild}" alt=""><b>${escHtml(k.x.name)}</b>
+<span>${escHtml(W_TYPEN[k.x.typ]?.name ?? "")}${k.x.halle ? `, ${escHtml(name(k.x.halle))}` : ""}</span><span>Scannen: Dokumentation im MRS-Werksplan</span></div>`).join("")}</div></body></html>`;
+      const rahmenDruck = document.createElement("iframe");
+      Object.assign(rahmenDruck.style, { position: "fixed", right: "0", bottom: "0", width: "0", height: "0", border: "0" });
+      rahmenDruck.onload = () => setTimeout(() => {
+        const w = rahmenDruck.contentWindow;
+        w.onafterprint = () => rahmenDruck.remove();
+        w.focus(); w.print();
+      }, 200);
+      rahmenDruck.srcdoc = html;
+      document.body.appendChild(rahmenDruck);
+    } catch (e) { message.error(`Etiketten konnten nicht erstellt werden: ${e.message}`, 6); }
+  }
+  const a = liste.find(x => x.id === auswahl);
+  const hallen = liste.filter(x => x.typ === "halle");
+  const name = (id) => liste.find(x => x.id === id)?.name ?? "–";
+
+  const senden = async (neu) => { const r = await api("/api/anlagen", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ liste: neu }) }); setD(r); return r; };
+
+  function oeffnen(el) {
+    setTour(null);
+    form.resetFields();
+    const start = el || { typ: "presse", halle: hallen[0]?.id ?? null, x: 0, z: 0, breite: 6, tiefe: 5, hoehe: 6, drehung: 0, daten: [], links: [] };
+    form.setFieldsValue(start);
+    setVorschau(null);
+    setBearbeiten({ a: el || null });
+  }
+  function schliessen() { setBearbeiten(null); setVorschau(null); }
+  async function speichern() {
+    const w = await form.validateFields();
+    const alt = bearbeiten.a;
+    const id = alt?.id || `${kennung(w.name)}-${Date.now().toString(36)}`;
+    const element = { ...(alt || { dokumente: [] }), ...w, id, halle: w.typ === "halle" ? null : (w.halle || null), seu: w.seu || null, daten: w.daten || [], links: w.links || [],
+                      live: w.live?.tabelle ? w.live : null };
+    setSpeichert(true);
+    try {
+      await senden(alt ? liste.map(x => (x.id === id ? element : x)) : [...liste, element]);
+      notification.success({ message: alt ? "Element gespeichert" : "Element angelegt", description: w.name, placement: "topRight" });
+      schliessen(); setAuswahl(id);
+    } catch (e) { message.error(e.message, 6); }
+    finally { setSpeichert(false); }
+  }
+  async function loeschen(el) {
+    try {
+      await senden(liste.filter(x => x.id !== el.id).map(x => (x.halle === el.id ? { ...x, halle: null } : x)));
+      message.success(`${el.name} gelöscht`); setAuswahl(null);
+    } catch (e) { message.error(e.message, 6); }
+  }
+  async function hochladen(datei) {
+    if (datei.size > 25 * 1024 * 1024) { message.error(`${datei.name}: zu groß (höchstens 25 MB).`); return; }
+    setLaedtHoch(true);
+    try {
+      setD(await api(`/api/anlagen/${a.id}/dokumente`, { method: "POST", headers: { "Content-Type": "application/octet-stream", "x-dateiname": encodeURIComponent(datei.name) }, body: datei }));
+      message.success(`${datei.name} hochgeladen`);
+    } catch (e) { message.error(e.message, 6); }
+    finally { setLaedtHoch(false); }
+  }
+  async function dokLoeschen(dok) {
+    try { setD(await api(`/api/anlagen/${a.id}/dokumente/${dok.id}`, { method: "DELETE" })); message.success("Dokument gelöscht"); }
+    catch (e) { message.error(e.message, 6); }
+  }
+
+  // --- présentation : vue d'ensemble, puis chaque halle avec ses installations, puis l'extérieur (en boucle) ---
+  const schritte = useMemo(() => {
+    const nachX = (x, y) => x.x - y.x || x.z - y.z;
+    const r = [{ id: null }];
+    for (const h of liste.filter(x => x.typ === "halle").sort(nachX)) {
+      r.push({ id: h.id });
+      liste.filter(x => x.halle === h.id).sort(nachX).forEach(x => r.push({ id: x.id }));
+    }
+    liste.filter(x => x.typ !== "halle" && !x.halle).sort(nachX).forEach(x => r.push({ id: x.id }));
+    return r;
+  }, [liste]);
+  const n = schritte.length;
+  const schritt = tour ? schritte[tour.index % n] : null;
+  useEffect(() => {
+    if (!tour) return;
+    setAuswahl(schritt.id);
+    if (!schritt.id) setHeim(x => x + 1);
+    setDoku(x => (x ? schritt.id || null : x));               // documentation ouverte : elle suit les flèches ← →
+    setAnsicht(null);
+  }, [tour?.index, !!tour]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!tour || tour.pause) return;
+    const t = setTimeout(() => setTour(x => x && { ...x, index: (x.index + 1) % n }), dauer * 1000);
+    return () => clearTimeout(t);
+  }, [tour, dauer, n]);
+  const weiter = (d) => setTour(x => x && { ...x, index: (x.index + d + n) % n });
+  const starten = () => { if (bearbeiten) return; setAnimiert(true); setTour({ index: 0, pause: false }); };
+  const beenden = () => { setTour(null); setDoku(null); setAnsicht(null); };
+  // documentation dans la vue 3D (présentation ou plein écran) : la présentation se met en pause pour lire
+  const dokuOeffnen = (id) => { setAuswahl(id); setDoku(id); setAnsicht(null); setTour(x => x && { ...x, pause: true }); };
+  const fortsetzen = () => {
+    const i = schritte.findIndex(x => x.id === doku);
+    setDoku(null); setAnsicht(null);
+    setTour(x => x && { index: i >= 0 ? i : x.index, pause: false });
+  };
+  useEffect(() => {
+    if (!tour) return;
+    const taste = (e) => {
+      if (["INPUT", "TEXTAREA"].includes(e.target.tagName)) return;
+      if (e.key === "ArrowRight") weiter(1);
+      else if (e.key === "ArrowLeft") weiter(-1);
+      else if (e.key === " ") { e.preventDefault(); setTour(x => x && { ...x, pause: !x.pause }); }
+      else if (e.key === "Escape" && !document.fullscreenElement) beenden();
+    };
+    addEventListener("keydown", taste);
+    return () => removeEventListener("keydown", taste);
+  }, [!!tour, n]); // eslint-disable-line react-hooks/exhaustive-deps
+  // plein écran de la vue 3D
+  useEffect(() => {
+    const f = () => setVoll(document.fullscreenElement === rahmen.current);
+    addEventListener("fullscreenchange", f);
+    return () => removeEventListener("fullscreenchange", f);
+  }, []);
+  useEffect(() => { if (!tour && !voll) { setDoku(null); setAnsicht(null); } }, [!!tour, voll]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {                                        // Échap : d'abord fermer le document, puis la documentation
+    if (!doku) return;
+    const taste = (e) => { if (e.key !== "Escape") return; e.stopImmediatePropagation(); if (ansicht) setAnsicht(null); else setDoku(null); };
+    addEventListener("keydown", taste, true);
+    return () => removeEventListener("keydown", taste, true);
+  }, [doku, ansicht]);
+  const vollbild = () => (document.fullscreenElement ? document.exitFullscreen() : rahmen.current?.requestFullscreen?.())?.catch?.(() => {});
+
+  if (fehler) return <Alert type="error" showIcon message="Werksplan konnte nicht geladen werden" description={fehler} />;
+
+  // --- carte d'information de la présentation ---
+  let tourKarte = null;
+  if (tour) {
+    const ta = schritt.id ? liste.find(x => x.id === schritt.id) : null;
+    const kurz2 = (t, max = 230) => { const x = String(t || "").replace(/\*\*/g, "").replace(/^\s*-\s+/gm, "").replace(/\s+/g, " ").trim(); return x.length > max ? `${x.slice(0, max).replace(/\s+\S*$/, "")} …` : x; };
+    const pz = (v) => (v == null ? "–" : `${v <= 0 ? "−" : "+"}${prozent(Math.abs(v))}`);
+    const werte = [];
+    let text = "";
+    if (!ta) {
+      text = "Rundgang durch alle Hallen und Anlagen. Ein Klick auf eine Halle oder Anlage öffnet ihre Dokumentation.";
+      werte.push(["Hallen", liste.filter(x => x.typ === "halle").length], ["Anlagen", liste.filter(x => x.typ !== "halle").length]);
+      if (en.kpi) werte.push([`Energieverbrauch ${jahr}`, kurz(en.kpi.gesamtV)], ["EnPI Standort", `${dez(en.kpi.standort.enpiAkt, 2)} (${pz(en.kpi.standort.veraenderung)})`]);
+      else werte.push(["Dokumente", liste.reduce((x, y) => x + (y.dokumente?.length || 0), 0)]);
+    } else {
+      text = kurz2(ta.beschreibung);
+      const kpi = ta.seu && en.kpi ? en.kpi.anlagen.find(x => x.key === ta.seu) : null;
+      if (ta.typ === "halle") {
+        const kinder = liste.filter(x => x.halle === ta.id);
+        const verbrauch = en.kpi ? kinder.reduce((x, k) => x + (en.kpi.anlagen.find(y => y.key === k.seu)?.verbrauch || 0), 0) : 0;
+        werte.push(["Anlagen", kinder.length], ["Grundfläche", `${zahl(ta.breite * ta.tiefe)} m²`]);
+        if (verbrauch) werte.push([`Energie ${jahr} (erfasst)`, kurz(verbrauch)]);
+        if (!text) text = kinder.length ? `Hier stehen: ${kinder.map(x => x.name).join(", ")}.` : "";
+      } else if (kpi) {
+        werte.push([`Verbrauch ${jahr}`, kurz(kpi.verbrauch)], ["Anteil am Standort", kpi.anteil == null ? "–" : prozent(kpi.anteil)],
+                   [`EnPI je ${kpi.treiber}`, dez(kpi.enpiAkt, 3)], [`ggü. ${en.basisJahr}`, pz(kpi.veraenderung)]);
+      } else {
+        (ta.daten || []).slice(0, 3).forEach(x => werte.push([x.name, x.wert]));
+      }
+      if (werte.length < 4 && ta.dokumente?.length) werte.push(["Dokumente", ta.dokumente.length]);
+      const z = zustand[ta.id];
+      const lv = live[ta.id];
+      if (lv && !["fehler", "keine"].includes(lv.status)) {
+        (lv.werte || []).slice(0, 2).reverse().forEach(w => werte.unshift([w.name, `${liveZahl(w.wert)}${w.einheit ? ` ${w.einheit}` : ""}`]));
+        werte.unshift(["Live", LIVE_STATUS[lv.status].name]);
+      }
+      if (z?.stufe) werte.unshift(["Zustand", z.meldungen.length ? `${z.meldungen.length} ${z.stufe === "kritisch" ? "kritisch" : z.meldungen.length === 1 ? "Warnung" : "Warnungen"}` : "in Ordnung"]);
+    }
+    tourKarte = (
+      <div className="w3d-tour">
+        {!doku && <div className="w3d-tour-karte" key={tour.index}>
+          <span className="w3d-tour-schritt">Schritt {(tour.index % n) + 1} von {n}{ta ? `, ${W_TYPEN[ta.typ]?.name}${ta.halle ? ` in ${name(ta.halle)}` : ""}` : ""}</span>
+          <h2>{ta ? ta.name : "Standort MRS"}</h2>
+          {text && <p>{text}</p>}
+          {werte.length > 0 && <div className="w3d-tour-werte">{werte.slice(0, 4).map(([l, v]) => <div key={l}><span>{l}</span><b>{v}</b></div>)}</div>}
+          {ta && <button className="w3d-knopf primaer" onClick={() => dokuOeffnen(ta.id)}><FileTextOutlined /> Dokumentation{ta.dokumente?.length ? ` (${ta.dokumente.length} ${ta.dokumente.length === 1 ? "Datei" : "Dateien"})` : ""}</button>}
+        </div>}
+        <div className="w3d-tour-steuerung">
+          <Button shape="circle" icon={<LeftOutlined />} onClick={() => weiter(-1)} title="Zurück (←)" aria-label="Zurück" />
+          <Button shape="circle" type="primary" icon={tour.pause ? <CaretRightOutlined /> : <PauseOutlined />}
+            onClick={() => setTour(x => ({ ...x, pause: !x.pause }))} title={tour.pause ? "Weiter (Leertaste)" : "Anhalten (Leertaste)"} aria-label={tour.pause ? "Weiter" : "Anhalten"} />
+          <Button shape="circle" icon={<RightOutlined />} onClick={() => weiter(1)} title="Weiter (→)" aria-label="Nächster Schritt" />
+          <Button shape="circle" icon={<CloseOutlined />} onClick={beenden} title="Präsentation beenden (Esc)" aria-label="Präsentation beenden" />
+        </div>
+        <div className="w3d-tour-fortschritt"><div key={`${tour.index}-${tour.pause}`} style={{ animationDuration: `${dauer}s`, animationPlayState: tour.pause ? "paused" : "running" }} /></div>
+      </div>
+    );
+  }
+
+  // --- documentation dans la vue 3D (fonctionne aussi en plein écran) ---
+  let dokuPanel = null, ansichtPanel = null;
+  const da = doku ? liste.find(x => x.id === doku) : null;
+  if (da) {
+    const dz = zustand[da.id];
+    const dk = da.seu && en.kpi ? en.kpi.anlagen.find(x => x.key === da.seu) : null;
+    const kinder = liste.filter(x => x.halle === da.id);
+    const docs = [...(da.dokumente || [])].sort((x, y) => x.name.localeCompare(y.name, "de"));
+    const pz = (v) => (v == null ? "–" : `${v <= 0 ? "−" : "+"}${prozent(Math.abs(v))}`);
+    const url = (dok) => `/api/anlagen/${da.id}/dokumente/${dok.id}`;
+    dokuPanel = (
+      <div className="w3d-doku" role="dialog" aria-label={`Dokumentation ${da.name}`} key={da.id}>
+        <div className="w3d-doku-kopf">
+          <div style={{ minWidth: 0 }}>
+            <span className="w3d-tour-schritt">{W_TYPEN[da.typ]?.name}{da.halle ? ` in ${name(da.halle)}` : ""}</span>
+            <h3>{da.name}</h3>
+          </div>
+          <button className="w3d-knopf rund" onClick={() => { setDoku(null); setAnsicht(null); }} aria-label="Dokumentation schließen" title="Schließen (Esc)"><CloseOutlined /></button>
+        </div>
+        <div className="w3d-doku-inhalt">
+          {dz?.stufe && (
+            <div className={`w3d-doku-zustand ${dz.stufe}`}>
+              <b>{dz.meldungen.length ? `${dz.meldungen.length} ${dz.meldungen.length === 1 ? "Meldung" : "Meldungen"} (${ZUSTAND_NAME[dz.stufe]})` : `In Ordnung, keine Meldungen ${jahr}`}</b>
+              {dz.meldungen.length > 0 && <ul>{dz.meldungen.slice(0, 3).map(w => <li key={w.id}>{w.titel}</li>)}</ul>}
+            </div>
+          )}
+          {da.beschreibung && <section><AntwortText text={da.beschreibung} /></section>}
+          {kinder.length > 0 && (
+            <section><h4>Anlagen in dieser Halle</h4>
+              <div className="w3d-doku-chips">{kinder.map(x => <button key={x.id} className="w3d-chip" onClick={() => dokuOeffnen(x.id)}>{x.name}</button>)}</div></section>
+          )}
+          {dk && (
+            <section><h4>Energie {jahr}</h4>
+              <div className="w3d-tour-werte">
+                {[["Verbrauch", kurz(dk.verbrauch)], ["Anteil am Standort", dk.anteil == null ? "–" : prozent(dk.anteil)],
+                  [`EnPI je ${dk.treiber}`, dez(dk.enpiAkt, 3)], [`ggü. ${en.basisJahr}`, pz(dk.veraenderung)]].map(([l, v]) => <div key={l}><span>{l}</span><b>{v}</b></div>)}
+              </div></section>
+          )}
+          {live[da.id] && (() => {
+            const lv = live[da.id];
+            return (
+              <section><h4>Live ({LIVE_STATUS[lv.status]?.name}{lv.zeit ? `, ${alterText(lv.alterSek)}` : ""})</h4>
+                {lv.status === "fehler" ? <p className="w3d-leise">{lv.fehler}</p> : lv.werte?.length > 0 && (
+                  <div className="w3d-tour-werte">{lv.werte.map(w => <div key={w.name}><span>{w.name}</span><b>{liveZahl(w.wert)}{w.einheit ? ` ${w.einheit}` : ""}</b></div>)}</div>
+                )}
+              </section>
+            );
+          })()}
+          {da.daten?.length > 0 && (
+            <section><h4>Technische Daten</h4>
+              <dl className="w3d-dl">{da.daten.map((x, i) => <React.Fragment key={i}><dt>{x.name}</dt><dd>{x.wert}</dd></React.Fragment>)}</dl></section>
+          )}
+          {(() => {
+            const pl = wartung.plaene.filter(p => p.anlage === da.id), of = wartung.stoerungen.filter(s => s.anlage === da.id && !s.ende);
+            if (!pl.length && !of.length) return null;
+            return (
+              <section><h4>Wartung und Störungen</h4>
+                <div className="w3d-doku-liste">
+                  {of.map(s => (
+                    <div key={s.id} className="w3d-dok-knopf" style={{ cursor: "default", boxShadow: "inset 3px 0 0 #CF4B3B" }}>
+                      <WarningOutlined style={{ fontSize: 18, color: "#F07A6A" }} />
+                      <span><b>{STOER_STUFE[s.stufe].name}: {s.titel}</b><small>seit {dayjs(s.beginn).format("DD.MM. HH:mm")} ({dauerText(stoerStunden(s))})</small></span>
+                    </div>
+                  ))}
+                  {pl.sort((x, y) => (naechsteWartung(x) || "0").localeCompare(naechsteWartung(y) || "0")).slice(0, 4).map(p => {
+                    const st = wartungStatus(p), nx = naechsteWartung(p);
+                    return (
+                      <div key={p.id} className="w3d-dok-knopf" style={{ cursor: "default" }}>
+                        <ToolOutlined style={{ fontSize: 18, color: st === "ueberfaellig" ? "#F07A6A" : st === "ok" ? "#4FC3B1" : "#F0AA2E" }} />
+                        <span><b>{p.titel}</b><small>{nx ? `${st === "ueberfaellig" ? "überfällig seit" : "nächste am"} ${dayjs(nx).format("DD.MM.YYYY")}` : "noch nie durchgeführt"}, {intervallText(p)}</small></span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })()}
+          <section><h4>Dokumente ({docs.length})</h4>
+            {!docs.length ? <p className="w3d-leise">Keine Dokumente hinterlegt.</p> : (
+              <div className="w3d-doku-liste">
+                {docs.map(dok => (
+                  <button key={dok.id} className="w3d-dok-knopf" onClick={() => setAnsicht(dok)}>
+                    {/\.pdf$/i.test(dok.name) ? <FilePdfOutlined style={{ color: "#F07A6A", fontSize: 18 }} /> : <PaperClipOutlined style={{ fontSize: 18 }} />}
+                    <span><b>{dok.name}</b><small>{dateiGroesse(dok.groesse)}, {dayjs(dok.zeit).format("DD.MM.YYYY")}</small></span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
+          {da.links?.length > 0 && (
+            <section><h4>Links</h4>
+              <div className="w3d-doku-liste">{da.links.map((l, i) => /^https?:/i.test(l.url)
+                ? <a key={i} className="w3d-dok-knopf" href={l.url} target="_blank" rel="noreferrer"><LinkOutlined style={{ fontSize: 18 }} /><span><b>{l.titel || l.url}</b><small>öffnet in neuem Tab</small></span></a>
+                : <div key={i} className="w3d-dok-knopf" style={{ cursor: "default" }}><LinkOutlined style={{ fontSize: 18 }} /><span><b>{l.titel || "Netzwerkpfad"}</b><small style={{ userSelect: "all" }}>{l.url}</small></span></div>)}
+              </div></section>
+          )}
+          {da.notizen && <section><h4>Notizen</h4><AntwortText text={da.notizen} /></section>}
+          {!da.beschreibung && !da.daten?.length && !docs.length && !da.notizen && <p className="w3d-leise">Für dieses Element ist noch keine Dokumentation erfasst. Ergänzen über „Bearbeiten“ in der Fiche rechts.</p>}
+        </div>
+        {tour && <div className="w3d-doku-fuss"><button className="w3d-knopf primaer" onClick={fortsetzen}><CaretRightOutlined /> Präsentation ab hier fortsetzen</button></div>}
+      </div>
+    );
+    if (ansicht) {
+      const u = url(ansicht);
+      const bild = /\.(png|jpe?g|webp|gif)$/i.test(ansicht.name), inline = /\.(pdf|txt)$/i.test(ansicht.name);
+      ansichtPanel = (
+        <div className="w3d-viewer" role="dialog" aria-label={ansicht.name}>
+          <div className="w3d-viewer-kopf">
+            <b>{ansicht.name}</b>
+            <a className="w3d-knopf" href={u} target="_blank" rel="noreferrer"><LinkOutlined /> Neuer Tab</a>
+            <a className="w3d-knopf" href={u} download={ansicht.name}><DownloadOutlined /> Herunterladen</a>
+            <button className="w3d-knopf rund" onClick={() => setAnsicht(null)} aria-label="Vorschau schließen" title="Schließen (Esc)"><CloseOutlined /></button>
+          </div>
+          <div className="w3d-viewer-inhalt">
+            {bild ? <img src={u} alt={ansicht.name} />
+              : inline ? <iframe src={u} title={ansicht.name} />
+              : <div className="w3d-viewer-leer"><PaperClipOutlined style={{ fontSize: 40 }} />
+                  <p>Für {ansicht.name.split(".").pop().toUpperCase()}-Dateien gibt es keine Vorschau im Browser.</p>
+                  <a className="w3d-knopf primaer" href={u} download={ansicht.name}><DownloadOutlined /> Herunterladen</a></div>}
+          </div>
+        </div>
+      );
+    }
+  }
+
+  // --- panneau de droite : liste ou détail ---
+  const Eintrag = ({ x }) => (
+    <button className="w3d-eintrag" onClick={() => setAuswahl(x.id)}>
+      <Punkt farbe={wFarbe(x, f)} /><span className="w3d-eintrag-name">{x.name}</span>
+      {zustandAn && zustand[x.id]?.meldungen?.length > 0 && <Tag bordered={false} color={zustand[x.id].stufe === "kritisch" ? "error" : "warning"} style={{ marginInlineEnd: 0 }}>{zustand[x.id].meldungen.length}</Tag>}
+      {x.dokumente?.length > 0 && <Text type="secondary" style={{ fontSize: 12 }}><PaperClipOutlined /> {x.dokumente.length}</Text>}
+    </button>
+  );
+  const passt = (x) => !suche || x.name.toLowerCase().includes(suche.toLowerCase());
+  const gruppen = [...hallen.map(h => ({ h, kinder: liste.filter(x => x.halle === h.id) })), { h: null, kinder: liste.filter(x => x.typ !== "halle" && !x.halle) }]
+    .map(g => ({ ...g, kinder: g.kinder.filter(passt), zeigen: (g.h && passt(g.h)) || g.kinder.some(passt) })).filter(g => g.zeigen);
+
+  const listeKarte = (
+    <Card title={<Space><OrderedListOutlined />Elemente</Space>} extra={<Text type="secondary">{liste.length}</Text>} styles={{ body: { paddingTop: 12 } }}>
+      <Input allowClear prefix={<SearchOutlined />} placeholder="Element suchen" value={suche} onChange={e => setSuche(e.target.value)} style={{ marginBottom: 12 }} />
+      {!d ? <Skeleton active /> : !liste.length ? <Empty description="Noch keine Elemente. Legen Sie die erste Halle an." /> : (
+        <Flex vertical gap={12}>
+          {gruppen.map(g => (
+            <div key={g.h?.id ?? "aussen"}>
+              {g.h ? <button className="w3d-eintrag w3d-halle" onClick={() => setAuswahl(g.h.id)}><HomeOutlined /><span className="w3d-eintrag-name">{g.h.name}</span>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{liste.filter(x => x.halle === g.h.id).length} Anlagen</Text></button>
+                : <Text type="secondary" style={{ fontSize: 12, display: "block", padding: "4px 8px" }}>Außenbereich und ohne Halle</Text>}
+              <div className="w3d-kinder">{g.kinder.map(x => <Eintrag key={x.id} x={x} />)}</div>
+            </div>
+          ))}
+        </Flex>
+      )}
+    </Card>
+  );
+
+  let detail = null;
+  if (a) {
+    const kinder = liste.filter(x => x.halle === a.id);
+    const kpi = a.seu && en.kpi ? en.kpi.anlagen.find(x => x.key === a.seu) : null;
+    const offen = a.seu ? massnahmen.filter(x => x.anlage === a.seu && (x.status === "geplant" || x.status === "umsetzung")) : [];
+    const z = zustand[a.id];
+    const ueberblick = (
+      <Flex vertical gap={16}>
+        <LiveKarte l={live[a.id]} />
+        {z?.stufe && (
+          <Alert type={z.stufe === "kritisch" ? "error" : z.stufe === "warnung" ? "warning" : "success"} showIcon
+            message={z.meldungen.length ? `${z.meldungen.length} ${z.meldungen.length === 1 ? "Meldung" : "Meldungen"} für ${jahr}` : `Keine Auffälligkeiten in ${jahr}`}
+            description={z.meldungen.length ? <ul className="w3d-liste">{z.meldungen.slice(0, 5).map(w => <li key={w.id}>{w.titel}</li>)}</ul> : null}
+            action={z.meldungen.length ? <Button size="small" onClick={() => gehe("warnungen")}>Warnungen</Button> : null} />
+        )}
+        {a.beschreibung ? <AntwortText text={a.beschreibung} /> : <Text type="secondary">Noch keine Beschreibung.{darf ? " Mit „Bearbeiten“ ergänzen." : ""}</Text>}
+        {kinder.length > 0 && (
+          <div><Text strong>Anlagen in dieser Halle</Text>
+            <Flex wrap gap={6} style={{ marginTop: 6 }}>{kinder.map(x => <Tag key={x.id} style={{ cursor: "pointer" }} onClick={() => setAuswahl(x.id)}><Punkt farbe={wFarbe(x, f)} />{x.name}</Tag>)}</Flex></div>
+        )}
+        {a.seu && (
+          <Card size="small" title={<Space><ThunderboltOutlined />Energie {jahr}</Space>}
+            extra={<Button type="link" size="small" onClick={() => gehe("energie")} style={{ padding: 0 }}>Energie-Seite öffnen</Button>}>
+            {!kpi ? <Text type="secondary">Keine Energiedaten für {jahr}.</Text> : (
+              <Descriptions size="small" column={1} items={[
+                { key: "v", label: "Verbrauch", children: <span className="zahl">{zahl(kpi.verbrauch)}</span> },
+                { key: "a", label: "Anteil am Standort", children: kpi.anteil == null ? "–" : prozent(kpi.anteil) },
+                { key: "e", label: `EnPI (je ${kpi.treiber})`, children: <Space size={8}><b className="zahl">{dez(kpi.enpiAkt, 3)}</b><Delta v={kpi.veraenderung} /><Text type="secondary">ggü. {en.basisJahr}</Text></Space> },
+                { key: "s", label: "Normalisierte Einsparung", children: kpi.einsparung == null ? "–"
+                    : <span className="zahl" style={{ color: kpi.einsparung >= 0 ? "#2F9E8F" : "#CF4B3B" }}>{kpi.einsparung >= 0 ? "+" : "−"}{zahl(Math.abs(kpi.einsparung))}</span> }
+              ]} />
+            )}
+          </Card>
+        )}
+        {a.seu && (
+          <div><Flex justify="space-between" align="center"><Text strong>Offene Maßnahmen ({offen.length})</Text>
+            <Button type="link" size="small" onClick={() => gehe("massnahmen")} style={{ padding: 0 }}>Maßnahmenplan</Button></Flex>
+            {offen.length ? <ul className="w3d-liste">{offen.slice(0, 5).map(x => <li key={x.id} style={{ color: istUeberfaellig(x) ? "#CF4B3B" : undefined }}>{x.titel}{istUeberfaellig(x) ? " (überfällig)" : ""}</li>)}</ul>
+              : <Text type="secondary" style={{ display: "block" }}>Keine offenen Maßnahmen.</Text>}</div>
+        )}
+        <div><Text strong>Technische Daten</Text>
+          {a.daten?.length ? <Descriptions size="small" bordered column={1} style={{ marginTop: 6 }} items={a.daten.map((x, i) => ({ key: i, label: x.name || "–", children: x.wert }))} />
+            : <Text type="secondary" style={{ display: "block" }}>Noch keine Angaben.</Text>}</div>
+        <Text type="secondary" style={{ fontSize: 12 }}>Abmessungen im Plan: {dez(a.breite, 1)} × {dez(a.tiefe, 1)} × {dez(a.hoehe, 1)} m (B × T × H)</Text>
+      </Flex>
+    );
+    const dokumente = (
+      <Flex vertical gap={12}>
+        {darf && (
+          <Upload.Dragger multiple accept={DOKU_ANNEHMEN} showUploadList={false} disabled={laedtHoch} beforeUpload={(datei) => { hochladen(datei); return false; }}>
+            <p style={{ margin: 0 }}><UploadOutlined style={{ fontSize: 22 }} /></p>
+            <p style={{ margin: "4px 0 0" }}>{laedtHoch ? "Wird hochgeladen …" : "Dateien hierher ziehen oder klicken"}</p>
+            <Text type="secondary" style={{ fontSize: 12 }}>PDF, Bilder, Office, CAD (DWG, DXF, STEP), ZIP · höchstens 25 MB</Text>
+          </Upload.Dragger>
+        )}
+        {!a.dokumente?.length ? <Text type="secondary">Noch keine Dokumente.</Text> : (
+          <Flex vertical gap={4}>
+            {[...a.dokumente].sort((x, y) => x.name.localeCompare(y.name, "de")).map(dok => (
+              <Flex key={dok.id} align="center" gap={8} className="w3d-dok">
+                {/\.pdf$/i.test(dok.name) ? <FilePdfOutlined style={{ color: "#CF4B3B" }} /> : <PaperClipOutlined />}
+                <Flex vertical style={{ flex: 1, minWidth: 0 }}>
+                  <a href={`/api/anlagen/${a.id}/dokumente/${dok.id}`} target="_blank" rel="noreferrer" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{dok.name}</a>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{dateiGroesse(dok.groesse)}, {dayjs(dok.zeit).format("DD.MM.YYYY")}{dok.wer ? `, ${dok.wer}` : ""}</Text>
+                </Flex>
+                {darf && <Popconfirm title="Dokument löschen?" okText="Löschen" cancelText="Abbrechen" okButtonProps={{ danger: true }} onConfirm={() => dokLoeschen(dok)}>
+                  <Button type="text" danger size="small" icon={<DeleteOutlined />} aria-label={`${dok.name} löschen`} /></Popconfirm>}
+              </Flex>
+            ))}
+          </Flex>
+        )}
+        {a.links?.length > 0 && (
+          <div><Text strong>Links</Text>
+            <Flex vertical gap={4} style={{ marginTop: 6 }}>{a.links.map((l, i) => /^https?:/i.test(l.url)
+              ? <a key={i} href={l.url} target="_blank" rel="noreferrer"><LinkOutlined /> {l.titel || l.url}</a>
+              : <div key={i}><Text><LinkOutlined /> {l.titel || "Netzwerkpfad"}</Text><br /><Text code copyable style={{ fontSize: 12 }}>{l.url}</Text></div>)}
+            </Flex>
+            {a.links.some(l => !/^https?:/i.test(l.url)) && <Text type="secondary" style={{ fontSize: 12 }}>Netzwerkpfade kopieren und im Explorer einfügen (der Browser öffnet sie nicht direkt).</Text>}
+          </div>
+        )}
+      </Flex>
+    );
+    detail = (
+      <Card title={<Space size={4}><Button type="text" size="small" icon={<LeftOutlined />} onClick={() => setAuswahl(null)} aria-label="Zurück zur Liste" /><span>{a.name}</span></Space>}
+        extra={<Space size={0}>
+          <Tooltip title="QR-Code für das Handy"><Button type="text" icon={<QrcodeOutlined />} onClick={() => qrZeigen(a)} aria-label="QR-Code" /></Tooltip>
+          {darf && <>
+          <Tooltip title="Bearbeiten"><Button type="text" icon={<EditOutlined />} onClick={() => oeffnen(a)} aria-label="Bearbeiten" /></Tooltip>
+          <Popconfirm title={`${a.name} löschen?`} description={<div style={{ maxWidth: 260 }}>Das Element und seine hochgeladenen Dokumente werden gelöscht.{a.typ === "halle" ? " Anlagen in der Halle bleiben erhalten." : ""}</div>}
+            okText="Löschen" cancelText="Abbrechen" okButtonProps={{ danger: true }} onConfirm={() => loeschen(a)}>
+            <Tooltip title="Löschen"><Button type="text" danger icon={<DeleteOutlined />} aria-label="Löschen" /></Tooltip>
+          </Popconfirm></>}</Space>}>
+        <Flex wrap gap={6} style={{ marginBottom: 8 }}>
+          <Tag bordered={false} icon={W_TYPEN[a.typ]?.icon}>{W_TYPEN[a.typ]?.name}</Tag>
+          {a.halle && <Tag bordered={false} icon={<HomeOutlined />} style={{ cursor: "pointer" }} onClick={() => setAuswahl(a.halle)}>{name(a.halle)}</Tag>}
+          {a.seu && <Tag bordered={false} color="volcano" icon={<ThunderboltOutlined />}>Energiedaten: {ANLAGE_NAME[a.seu]}</Tag>}
+        </Flex>
+        <Tabs key={a.id} size="small" items={[
+          { key: "u", label: "Übersicht", children: ueberblick },
+          { key: "w", label: <Space size={4}>Wartung{wartung.stoerungen.some(s => s.anlage === a.id && !s.ende) ? <Badge status="error" /> : null}</Space>,
+            children: <WartungAnlage a={a} wartung={wartung} darf={darf} setDialog={setWDialog} /> },
+          { key: "d", label: <span>Dokumente{a.dokumente?.length ? ` (${a.dokumente.length})` : ""}</span>, children: dokumente },
+          { key: "n", label: "Notizen", children: a.notizen ? <AntwortText text={a.notizen} /> : <Text type="secondary">Keine Notizen.</Text> }
+        ]} />
+      </Card>
+    );
+  }
+
+  return (
+    <Flex vertical gap={16}>
+      <Flex justify="space-between" align="flex-end" wrap gap={12}>
+        <Kopf titel="Werksplan 3D" text="Hallen und Anlagen des Standorts. Ein Element anklicken, um Beschreibung, Energiedaten und Dokumente zu sehen." />
+        <Space wrap>
+          {hatLive && <Tooltip title="Die Live-Daten werden alle 10 Sekunden aus der Datenbank gelesen">
+            <Tag bordered={false} color="processing" style={{ padding: "2px 10px" }}><Badge status="processing" /> Live{liveZeit ? ` ${liveZeit.toLocaleTimeString("de-DE")}` : ""}</Tag></Tooltip>}
+          <Space size={6}><Switch size="small" checked={beschriftung} onChange={setBeschriftung} /><Text>Beschriftung</Text></Space>
+          <Space size={6}><Switch size="small" checked={animiert} onChange={setAnimiert} /><Text>Animation</Text></Space>
+          <Tooltip title="Farben nach Warnungen: grün in Ordnung, orange Warnung, rot kritisch, grau ohne Energiedaten">
+            <Space size={6}><Switch size="small" checked={zustandAn} onChange={setZustandAn} /><Text>Zustand</Text></Space></Tooltip>
+          <Tooltip title="Alle QR-Codes auf A4 drucken, zum Aufkleben an Hallen und Anlagen">
+            <Button icon={<QrcodeOutlined />} disabled={!liste.length} onClick={() => etikettenDrucken(liste)}>QR-Etiketten</Button></Tooltip>
+          <Button icon={<HomeOutlined />} onClick={() => { beenden(); setAuswahl(null); setHeim(x => x + 1); }}>Gesamtansicht</Button>
+          {darf && <Button icon={<PlusOutlined />} onClick={() => { beenden(); oeffnen(null); }}>Neues Element</Button>}
+          <Space.Compact>
+            <Select value={dauer} onChange={setDauer} style={{ width: 92 }} aria-label="Dauer je Schritt"
+              options={[8, 12, 20, 30].map(x => ({ value: x, label: `${x} s` }))} />
+            {tour ? <Button icon={<CloseOutlined />} onClick={beenden}>Präsentation beenden</Button>
+              : <Button type="primary" icon={<CaretRightOutlined />} onClick={starten} disabled={!!bearbeiten || !liste.length}>Präsentation starten</Button>}
+          </Space.Compact>
+        </Space>
+      </Flex>
+      <Row gutter={[16, 16]}>
+        <Col xs={24} xl={16}>
+          <Card styles={{ body: { padding: 0 } }} style={{ overflow: "hidden" }}>
+            <div ref={rahmen} className="w3d-rahmen">
+              <Werk3D anlagen={anzeigen} auswahl={bearbeiten ? (bearbeiten.a?.id ?? null) : auswahl}
+                onWaehlen={(id) => {
+                  if (bearbeiten) return;
+                  if (tour || voll) { if (id) dokuOeffnen(id); else { setDoku(null); setAnsicht(null); } return; }
+                  setAuswahl(id);
+                }}
+                dunkel={dunkel} beschriftung={beschriftung} heim={heim} animiert={animiert} hilfe={!tour} zustandAn={zustandAn} live={live}
+                drehen={tour && !tour.pause ? (schritt?.id ? "normal" : "langsam") : false}>
+                <div className="w3d-ecke">
+                  <Button shape="circle" icon={voll ? <FullscreenExitOutlined /> : <FullscreenOutlined />} onClick={vollbild}
+                    title={voll ? "Vollbild beenden" : "Vollbild"} aria-label={voll ? "Vollbild beenden" : "Vollbild"} />
+                </div>
+                {zustandAn && (
+                  <div className="w3d-legende">
+                    {[["ok", "in Ordnung"], ["warnung", "Warnung"], ["kritisch", "kritisch"]].map(([k, t]) => <span key={k}><i style={{ background: ZUSTAND_FARBE[k] }} />{t}</span>)}
+                    <span><i style={{ background: dunkel ? "#55626e" : "#a7b0b8" }} />ohne Energiedaten</span>
+                  </div>
+                )}
+                {tourKarte}
+                {dokuPanel}
+                {ansichtPanel}
+              </Werk3D>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} xl={8} ref={detailRef} style={{ scrollMarginTop: 72 }}>{detail || listeKarte}</Col>
+      </Row>
+
+      <WartungDialog dialog={wDialog} schliessen={() => setWDialog(null)} anlagen={liste} fertig={(d) => d && setWartung?.(d)} />
+
+      <Modal open={!!qr} onCancel={() => setQr(null)} title={<Space><QrcodeOutlined />{qr?.a.name}</Space>} width={420}
+        footer={<Space>
+          <Button icon={<DownloadOutlined />} onClick={() => Object.assign(document.createElement("a"), { href: qr.png, download: `QR_${kennung(qr.a.name)}.png` }).click()}>Als Bild</Button>
+          <Button type="primary" icon={<PrinterOutlined />} onClick={() => etikettenDrucken([qr.a])}>Etikett drucken</Button></Space>}>
+        {qr && (
+          <Flex vertical align="center" gap={12}>
+            <img src={qr.png} alt={`QR-Code für ${qr.a.name}`} style={{ width: 260, height: 260, imageRendering: "pixelated", background: "#fff", padding: 8, borderRadius: 8 }} />
+            <Text type="secondary" style={{ fontSize: 12, textAlign: "center" }}>Mit der Handy-Kamera scannen: die Fiche von {qr.a.name} öffnet sich nach der Anmeldung.</Text>
+            <Text code copyable style={{ fontSize: 12, wordBreak: "break-all" }}>{qr.link}</Text>
+            {!qrBasis && <Alert type="warning" showIcon message="Mit dem Handy so nicht erreichbar"
+              description={<>Die Adresse zeigt auf diesen PC (localhost). In der .env <Text code>WEB_HOST=0.0.0.0</Text> und <Text code>APP_URL=http://SERVERNAME:3000</Text> eintragen, neu starten und die Codes neu drucken.</>} />}
+          </Flex>
+        )}
+      </Modal>
+
+      <Drawer open={!!bearbeiten} onClose={schliessen} width={480} mask={false} destroyOnHidden
+        title={<Space>{bearbeiten?.a ? <EditOutlined /> : <PlusOutlined />}{bearbeiten?.a ? `${bearbeiten.a.name} bearbeiten` : "Neues Element"}</Space>}
+        footer={<Flex justify="space-between" align="center"><Text type="secondary" style={{ fontSize: 12 }}>Die 3D-Ansicht zeigt die Änderungen sofort.</Text>
+          <Space><Button onClick={schliessen}>Abbrechen</Button><Button type="primary" loading={speichert} onClick={speichern}>{bearbeiten?.a ? "Speichern" : "Anlegen"}</Button></Space></Flex>}>
+        <Form form={form} layout="vertical" requiredMark
+          onValuesChange={(_, alle) => setVorschau({ ...(bearbeiten?.a || { dokumente: [] }), ...alle, id: bearbeiten?.a?.id ?? "__neu", name: alle.name || "Neues Element" })}>
+          <Form.Item name="name" label="Name" rules={[{ required: true, message: "Bitte einen Namen eingeben" }]}><Input maxLength={80} placeholder="z. B. Presse III" /></Form.Item>
+          <Row gutter={12}>
+            <Col span={12}><Form.Item name="typ" label="Typ"><Select options={Object.entries(W_TYPEN).map(([k, t]) => ({ value: k, label: <Space size={6}>{t.icon}{t.name}</Space> }))} /></Form.Item></Col>
+            <Col span={12}>{typWert !== "halle" && <Form.Item name="halle" label="Steht in"><Select allowClear placeholder="Außenbereich" options={hallen.filter(h => h.id !== bearbeiten?.a?.id).map(h => ({ value: h.id, label: h.name }))} /></Form.Item>}</Col>
+          </Row>
+          {typWert !== "halle" && (
+            <Form.Item name="seu" label="Energiedaten verknüpfen" extra="Zeigt Verbrauch, EnPI und Maßnahmen dieser Anlage aus SEUWerte.">
+              <Select allowClear placeholder="keine" options={SEU_DEF.map(x => ({ value: x.key, label: <span><Punkt farbe={f[x.farbe]} />{x.name}</span> }))} />
+            </Form.Item>
+          )}
+          <Text strong>Lage und Größe (Meter)</Text>
+          <Text type="secondary" style={{ display: "block", fontSize: 12, marginBottom: 8 }}>X nach rechts, Z nach vorne, Mittelpunkt des Plans = 0 / 0. Die Position ist der Mittelpunkt des Elements.</Text>
+          <Row gutter={8}>
+            {[["x", "X", -500, 500, 1], ["z", "Z", -500, 500, 1], ["drehung", "Drehung °", -360, 360, 15], ["breite", "Breite", 0.5, 300, 0.5], ["tiefe", "Tiefe", 0.5, 300, 0.5], ["hoehe", "Höhe", 0.5, 60, 0.5]].map(([n, l, mi, ma, st]) => (
+              <Col span={8} key={n}><Form.Item name={n} label={l} rules={[{ required: true, message: "Pflicht" }]} style={{ marginBottom: 12 }}>
+                <InputNumber min={mi} max={ma} step={st} decimalSeparator="," style={{ width: "100%" }} /></Form.Item></Col>
+            ))}
+          </Row>
+          <Form.Item name="beschreibung" label="Beschreibung" extra="**fett** und Zeilen mit „- “ werden formatiert angezeigt.">
+            <Input.TextArea autoSize={{ minRows: 3, maxRows: 10 }} maxLength={4000} placeholder="Aufgabe, Baujahr, Hersteller, Ansprechpartner …" />
+          </Form.Item>
+          <Text strong>Technische Daten</Text>
+          <Form.List name="daten">{(felder, { add, remove }) => (
+            <div style={{ marginTop: 8, marginBottom: 16 }}>
+              {felder.map(({ key, name: n }) => (
+                <Flex key={key} gap={8} align="start">
+                  <Form.Item name={[n, "name"]} style={{ flex: 1, marginBottom: 8 }}><Input placeholder="z. B. Presskraft" maxLength={60} /></Form.Item>
+                  <Form.Item name={[n, "wert"]} style={{ flex: 1.4, marginBottom: 8 }}><Input placeholder="z. B. 1.200 t" maxLength={200} /></Form.Item>
+                  <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(n)} aria-label="Angabe entfernen" />
+                </Flex>
+              ))}
+              <Button type="dashed" block icon={<PlusOutlined />} onClick={() => add({ name: "", wert: "" })}>Angabe hinzufügen</Button>
+            </div>
+          )}</Form.List>
+          <Text strong>Links</Text>
+          <Form.List name="links">{(felder, { add, remove }) => (
+            <div style={{ marginTop: 8, marginBottom: 16 }}>
+              {felder.map(({ key, name: n }) => (
+                <Flex key={key} gap={8} align="start">
+                  <Form.Item name={[n, "titel"]} style={{ flex: 1, marginBottom: 8 }}><Input placeholder="Titel" maxLength={120} /></Form.Item>
+                  <Form.Item name={[n, "url"]} style={{ flex: 1.6, marginBottom: 8 }}
+                    rules={[{ pattern: /^(https?:\/\/|\\\\)/i, message: "http(s)://… oder \\\\server\\freigabe" }]}>
+                    <Input placeholder="https://… oder \\server\freigabe\…" maxLength={500} /></Form.Item>
+                  <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(n)} aria-label="Link entfernen" />
+                </Flex>
+              ))}
+              <Button type="dashed" block icon={<LinkOutlined />} onClick={() => add({ titel: "", url: "" })}>Link hinzufügen</Button>
+            </div>
+          )}</Form.List>
+          <Collapse size="small" style={{ marginBottom: 16 }} defaultActiveKey={bearbeiten?.a?.live?.tabelle ? ["l"] : []} items={[{ key: "l", forceRender: true,
+            label: <Space><ThunderboltOutlined /><b>Live-Daten aus der Datenbank</b>{bearbeiten?.a?.live?.tabelle && <Tag bordered={false} color="processing">aktiv</Tag>}</Space>,
+            children: <LiveEinstellung form={form} offen={!!bearbeiten} /> }]} />
+          <Form.Item name="notizen" label="Notizen"><Input.TextArea autoSize={{ minRows: 2, maxRows: 8 }} maxLength={4000} placeholder="Wartung, Störungen, Hinweise …" /></Form.Item>
+        </Form>
+        {!bearbeiten?.a && <Alert type="info" showIcon message="Dokumente können nach dem Anlegen im Reiter „Dokumente“ hochgeladen werden." />}
+      </Drawer>
+    </Flex>
+  );
+}
+
 const SEITEN = [
   { key: "uebersicht", label: "Übersicht", icon: <DashboardOutlined /> },
+  { key: "werk", label: "Werksplan 3D", icon: <BuildOutlined /> },
+  { key: "wartung", label: "Wartung & Störungen", icon: <ToolOutlined /> },
   { key: "monatswerte", label: "Monatswerte", icon: <TableOutlined /> },
   { key: "abschaum", label: "Abschaum", icon: <ExperimentOutlined /> },
   { key: "energie", label: "Energie (SEU)", icon: <ThunderboltOutlined /> },
@@ -4605,7 +6404,7 @@ const SEITEN = [
   { key: "datenqualitaet", label: "Datenqualität", icon: <SafetyCertificateOutlined /> },
   { key: "benutzer", label: "Benutzer", icon: <TeamOutlined />, nurAdmin: true }
 ];
-const ausHash = () => SEITEN.find(s => s.key === location.hash.slice(1))?.key || "uebersicht";
+const ausHash = () => SEITEN.find(s => s.key === location.hash.slice(1).split("/")[0])?.key || "uebersicht";   // #werk/presse-1 → page werk
 
 function App({ dunkel, setDunkel, benutzer, abmelden, profilGespeichert }) {
   const istAdmin = benutzer.rolle === "admin";
@@ -4656,6 +6455,9 @@ function App({ dunkel, setDunkel, benutzer, abmelden, profilGespeichert }) {
   const [massnahmen, setMassnahmen] = useState({ liste: [], schutz: false });
   const [massnahmeZiel, setMassnahmeZiel] = useState(null);
   const massnahmenLaden = () => api("/api/massnahmen").then(setMassnahmen).catch(() => {});
+  const [wartung, setWartung] = useState(LEER_WARTUNG);
+  const wartungLaden = () => api("/api/wartung").then(setWartung).catch(() => {});
+  useEffect(() => { wartungLaden(); }, [stand]);
   useEffect(() => { massnahmenLaden(); }, [stand]);
   const warnungen = useMemo(() => {
     if (!jahr) return [];
@@ -4674,6 +6476,8 @@ function App({ dunkel, setDunkel, benutzer, abmelden, profilGespeichert }) {
     label: s.key === "datenqualitaet" && offen ? <Space>{s.label}<Badge count={offen} size="small" color="#E39A2D" /></Space>
       : s.key === "warnungen" && offeneWarnungen ? <Space>{s.label}<Badge count={offeneWarnungen} size="small" color={kritisch ? "#CF4B3B" : "#E39A2D"} /></Space>
       : s.key === "massnahmen" && massnahmen.liste.some(istUeberfaellig) ? <Space>{s.label}<Badge dot color="#CF4B3B" /></Space>
+      : s.key === "wartung" && wartung.stoerungen.some(x => !x.ende) ? <Space>{s.label}<Badge count={wartung.stoerungen.filter(x => !x.ende).length} size="small" /></Space>
+      : s.key === "wartung" && wartung.plaene.some(p => wartungStatus(p) === "ueberfaellig") ? <Space>{s.label}<Badge dot color="#E39A2D" /></Space>
       : s.label
   }));
   const gehe = (key) => { location.hash = key; setSeite(key); setMenuOffen(false); };
@@ -4728,8 +6532,10 @@ function App({ dunkel, setDunkel, benutzer, abmelden, profilGespeichert }) {
             {fehler && <Alert className="no-print" type="error" showIcon message="Daten konnten nicht geladen werden" description={fehler} style={{ marginBottom: 16 }}
                               action={<Button size="small" icon={<SyncOutlined />} onClick={() => location.reload()}>Neu laden</Button>} />}
             {seite === "uebersicht" && <Uebersicht k={k} laedt={laedt} dunkel={dunkel} />}
+            {seite === "wartung" && <WartungSeite wartung={wartung} setWartung={setWartung} laden={wartungLaden} jahr={jahr} dunkel={dunkel} />}
+            {seite === "werk" && <Werksplan en={en} massnahmen={massnahmen.liste} warnungen={warnungen} wartung={wartung} setWartung={setWartung} jahr={jahr} dunkel={dunkel} darf={darfSchreiben} gehe={gehe} />}
             {seite === "monatswerte" && <Monatswerte k={k} dunkel={dunkel} />}
-            {seite === "energie" && <Energie jahr={jahr} dunkel={dunkel} en={en} darf={darfSchreiben} />}
+            {seite === "energie" && <Energie jahr={jahr} dunkel={dunkel} en={en} darf={darfSchreiben} massnahmen={massnahmen.liste} />}
             {seite === "warnungen" && <Warnungen warnungen={warnungen} en={en} massnahmen={massnahmen.liste} darf={massnahmen.darf} jahr={jahr} dunkel={dunkel} zurMassnahme={zurMassnahme} />}
             {seite === "massnahmen" && <Massnahmen liste={massnahmen.liste} schutz={massnahmen.schutz} darf={massnahmen.darf} laden={massnahmenLaden} en={en} jahr={jahr} dunkel={dunkel}
                                                    ziel={massnahmeZiel} setZiel={setMassnahmeZiel} />}
@@ -4893,6 +6699,119 @@ body { margin: 0; font-variant-numeric: tabular-nums; }
 .zeile-blass > td { opacity: .55; }
 .zeile-aktiv > td { background: rgba(79,131,170,.12) !important; }
 .filter-leiste { padding: 10px 12px; margin-bottom: 4px; border-radius: 8px; background: rgba(127,127,127,.07); }
+/* --- Werksplan 3D --- */
+.w3d { position: relative; height: calc(100dvh - 230px); min-height: 460px; }
+.w3d-buehne { position: absolute; inset: 0; }
+.w3d-buehne canvas { display: block; touch-action: none; cursor: grab; }
+.w3d-buehne canvas:active { cursor: grabbing; }
+.w3d-labels { position: absolute; top: 0; left: 0; pointer-events: none; }
+.w3d-label { padding: 3px 9px; border-radius: 999px; background: rgba(20,33,43,.84); color: #fff; font-size: 12px; font-weight: 600;
+  white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.22); transition: background .2s; }
+.w3d-label.halle { background: rgba(43,88,116,.92); font-size: 13px; padding: 4px 12px; border-radius: 6px; }
+.w3d-label.aktiv { background: #E39A2D; color: #14212B; }
+.w3d-hinweis { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.w3d-hilfe { position: absolute; left: 12px; bottom: 10px; max-width: calc(100% - 24px); font-size: 12px; padding: 4px 10px; border-radius: 6px;
+  background: rgba(20,33,43,.62); color: #fff; pointer-events: none; }
+.w3d-eintrag { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.w3d-eintrag:hover { background: rgba(127,127,127,.1); }
+.w3d-eintrag:focus-visible { outline: 2px solid #4F83AA; }
+.w3d-eintrag-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w3d-halle { font-weight: 600; }
+.w3d-kinder { padding-left: 14px; margin-left: 9px; border-left: 1px solid rgba(127,127,127,.25); }
+.w3d-dok { padding: 6px 8px; border-radius: 6px; }
+.w3d-dok:hover { background: rgba(127,127,127,.08); }
+.w3d-liste { margin: 4px 0 0; padding-left: 1.2em; }
+@media (max-width: 1200px) { .w3d { height: 60vh; min-height: 380px; } }
+.w3d-badge { display: inline-block; margin-left: 6px; min-width: 18px; padding: 0 5px; border-radius: 999px; font-size: 11px; line-height: 18px; text-align: center; color: #fff; }
+.w3d-badge.warnung { background: #E39A2D; color: #14212B; }
+.w3d-badge.kritisch { background: #CF4B3B; }
+.w3d-legende { position: absolute; top: 12px; left: 12px; display: flex; flex-wrap: wrap; gap: 6px 14px; max-width: calc(100% - 80px); padding: 6px 12px; border-radius: 8px;
+  background: rgba(20,33,43,.68); color: #fff; font-size: 12px; pointer-events: none; }
+.w3d-legende span { display: inline-flex; align-items: center; gap: 6px; }
+.w3d-legende i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.w3d-knopf { all: unset; box-sizing: border-box; display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px;
+  background: rgba(255,255,255,.12); color: #fff; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.w3d-knopf:hover { background: rgba(255,255,255,.22); color: #fff; }
+.w3d-knopf.primaer { background: #E39A2D; color: #14212B; font-weight: 600; }
+.w3d-knopf.primaer:hover { background: #F0AA2E; color: #14212B; }
+.w3d-knopf.rund { width: 32px; height: 32px; padding: 0; justify-content: center; flex-shrink: 0; }
+.w3d-knopf:focus-visible, .w3d-chip:focus-visible, .w3d-dok-knopf:focus-visible { outline: 2px solid #E39A2D; outline-offset: 2px; }
+.w3d-tour-karte .w3d-knopf { pointer-events: auto; margin-top: 16px; }
+.w3d-doku { position: absolute; top: 60px; right: 12px; bottom: 84px; width: min(420px, calc(100% - 24px)); z-index: 2; display: flex; flex-direction: column;
+  border-radius: 12px; background: rgba(14,24,32,.92); color: #E8EEF2; backdrop-filter: blur(6px); box-shadow: 0 12px 32px rgba(0,0,0,.35); animation: w3d-ein .35s ease; }
+.w3d-doku-kopf { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 16px 18px 12px; border-bottom: 1px solid rgba(255,255,255,.1); }
+.w3d-doku-kopf h3 { margin: 2px 0 0; color: #fff; font-size: 22px; line-height: 1.2; overflow-wrap: anywhere; }
+.w3d-doku-inhalt { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 18px 18px; display: flex; flex-direction: column; gap: 18px; font-size: 14px; line-height: 1.55; }
+.w3d-doku-inhalt section h4 { margin: 0 0 8px; font-size: 12px; font-weight: 600; color: rgba(232,238,242,.6); }
+.w3d-doku-inhalt .antwort, .w3d-doku-inhalt .antwort p, .w3d-doku-inhalt .antwort li { color: #E8EEF2; }
+.w3d-doku-inhalt .antwort b { color: #fff; }
+.w3d-leise { margin: 0; color: rgba(232,238,242,.6); }
+.w3d-dl { display: grid; grid-template-columns: minmax(90px, auto) 1fr; gap: 6px 14px; margin: 0; }
+.w3d-dl dt { color: rgba(232,238,242,.6); }
+.w3d-dl dd { margin: 0; color: #fff; font-weight: 600; }
+.w3d-doku-liste { display: flex; flex-direction: column; gap: 6px; }
+.w3d-dok-knopf { all: unset; box-sizing: border-box; display: flex; gap: 10px; align-items: center; padding: 9px 11px; border-radius: 8px;
+  background: rgba(255,255,255,.06); color: #E8EEF2; cursor: pointer; }
+.w3d-dok-knopf:hover { background: rgba(255,255,255,.14); color: #E8EEF2; }
+.w3d-dok-knopf span { min-width: 0; flex: 1; }
+.w3d-dok-knopf b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #fff; font-weight: 600; }
+.w3d-dok-knopf small { display: block; color: rgba(232,238,242,.6); font-size: 12px; overflow-wrap: anywhere; }
+.w3d-doku-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.w3d-chip { all: unset; padding: 5px 12px; border-radius: 999px; background: rgba(255,255,255,.1); color: #fff; font-size: 13px; cursor: pointer; }
+.w3d-chip:hover { background: rgba(255,255,255,.2); }
+.w3d-doku-zustand { padding: 10px 12px; border-radius: 8px; border-left: 4px solid; background: rgba(255,255,255,.05); }
+.w3d-doku-zustand.ok { border-color: #2F9E8F; } .w3d-doku-zustand.warnung { border-color: #E39A2D; } .w3d-doku-zustand.kritisch { border-color: #CF4B3B; }
+.w3d-doku-zustand b { color: #fff; }
+.w3d-doku-zustand ul { margin: 6px 0 0; padding-left: 1.2em; color: rgba(232,238,242,.85); }
+.w3d-doku-fuss { padding: 12px 18px; border-top: 1px solid rgba(255,255,255,.1); }
+.w3d-viewer { position: absolute; inset: 12px; z-index: 3; display: flex; flex-direction: column; border-radius: 12px; overflow: hidden;
+  background: #0f1418; box-shadow: 0 16px 40px rgba(0,0,0,.45); animation: w3d-ein .3s ease; }
+.w3d-viewer-kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; color: #fff; background: #14212B; }
+.w3d-viewer-kopf b { flex: 1; min-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w3d-viewer-inhalt { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; background: #2a3238; }
+.w3d-viewer-inhalt iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.w3d-viewer-inhalt img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.w3d-viewer-leer { text-align: center; color: #E8EEF2; padding: 24px; }
+.w3d-rahmen:fullscreen .w3d-doku { width: min(500px, calc(100% - 24px)); }
+.w3d-rahmen:fullscreen .w3d-doku-inhalt { font-size: 16px; }
+@media (max-width: 700px) { .w3d-doku { top: auto; left: 8px; right: 8px; width: auto; bottom: 66px; max-height: 72%; } .w3d-viewer { inset: 0; border-radius: 0; } }
+@media (prefers-reduced-motion: reduce) { .w3d-doku, .w3d-viewer { animation: none; } }
+.w3d-live { display: block; margin-top: 2px; font-size: 11px; font-weight: 500; opacity: .95; }
+.w3d-live::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; background: #4F83AA; vertical-align: 1px; }
+.w3d-live.lauf::before { background: #4FC3B1; box-shadow: 0 0 0 0 rgba(79,195,177,.7); animation: w3d-puls 1.6s infinite; }
+.w3d-live.stopp::before, .w3d-live.keine::before { background: #A6AFB8; }
+.w3d-live.stoerung::before, .w3d-live.fehler::before { background: #F07A6A; }
+.w3d-live.veraltet::before { background: #F0AA2E; }
+@keyframes w3d-puls { 70% { box-shadow: 0 0 0 6px rgba(79,195,177,0); } 100% { box-shadow: 0 0 0 0 rgba(79,195,177,0); } }
+@media (prefers-reduced-motion: reduce) { .w3d-live.lauf::before { animation: none; } }
+.live-werte { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; }
+.live-werte span { display: block; font-size: 12px; opacity: .65; }
+.live-werte b { font-size: 20px; }
+.live-werte small { font-size: 12px; font-weight: 400; opacity: .7; }
+.w-karte { padding: 10px 12px; border-radius: 8px; background: rgba(127,127,127,.07); }
+.w3d-rahmen:fullscreen { background: #0f1418; }
+.w3d-rahmen:fullscreen .w3d { height: 100vh; min-height: 0; }
+.w3d-ecke { position: absolute; top: 12px; right: 12px; }
+.w3d-tour { position: absolute; inset: 0; pointer-events: none; }
+.w3d-tour-karte { position: absolute; left: 20px; bottom: 28px; width: min(460px, calc(100% - 40px)); padding: 18px 20px; border-radius: 12px;
+  background: rgba(14,24,32,.84); color: #E8EEF2; backdrop-filter: blur(6px); box-shadow: 0 12px 32px rgba(0,0,0,.35); animation: w3d-ein .5s ease; }
+.w3d-tour-karte h2 { margin: 2px 0 6px; color: #fff; font-size: clamp(20px, 2vw, 32px); line-height: 1.15; }
+.w3d-tour-karte p { margin: 0 0 14px; color: rgba(232,238,242,.82); font-size: 14px; line-height: 1.5; }
+.w3d-tour-schritt { font-size: 12px; color: rgba(232,238,242,.6); }
+.w3d-tour-werte { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; }
+.w3d-tour-werte span { display: block; font-size: 12px; color: rgba(232,238,242,.6); }
+.w3d-tour-werte b { display: block; font-size: 19px; color: #fff; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.w3d-tour-steuerung { position: absolute; right: 16px; bottom: 28px; display: flex; gap: 8px; padding: 8px; border-radius: 999px;
+  background: rgba(14,24,32,.72); pointer-events: auto; }
+.w3d-tour-fortschritt { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(255,255,255,.12); }
+.w3d-tour-fortschritt div { height: 100%; width: 0; background: #E39A2D; animation-name: m-lauf; animation-timing-function: linear; animation-fill-mode: forwards; }
+.w3d-rahmen:fullscreen .w3d-tour-karte { left: 32px; bottom: 40px; width: min(560px, calc(100% - 64px)); padding: 24px 28px; }
+.w3d-rahmen:fullscreen .w3d-tour-karte p { font-size: 17px; }
+.w3d-rahmen:fullscreen .w3d-tour-werte b { font-size: 26px; }
+@keyframes w3d-ein { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .w3d-tour-karte { animation: none; } }
+@media (max-width: 700px) { .w3d-tour-steuerung { top: 12px; bottom: auto; right: 60px; } .w3d-tour-karte { left: 10px; bottom: 14px; width: calc(100% - 20px); padding: 12px 14px; }
+  .w3d-tour-karte p { display: none; } }
 .mini-balken { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: rgba(127,127,127,.15); }
 `;
 

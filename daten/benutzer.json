@@ -1,11 +1,17 @@
 [
   {
     "login": "admin",
-    "name": "Said",
+    "name": "Admin",
     "rolle": "admin",
     "aktiv": true,
     "hash": "f412b9b292b9eae2f1981a246b6d41be:e51c4dc5569cd5d2eb7c0d523a79c0e5f771e49e6a3c1c35d58d0a873c86e487ac24b47e27a024e895663d152928d4c9b24669a88d49e9e36cb4ed0c36bdba53",
     "erstellt": "2026-11-05T13:50:03.195Z",
-    "letzteAnmeldung": "2026-11-05T15:16:44.179Z"
+    "letzteAnmeldung": "2026-11-09T12:23:12.740Z",
+    "email": null,
+    "abo": {
+      "woche": false,
+      "kritisch": false,
+      "fristen": false
+    }
   }
 ]

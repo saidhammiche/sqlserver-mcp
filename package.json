@@ -16,11 +16,14 @@
     "antd": "6.6.6",
     "dayjs": "1.11.23",
     "express": "5.3.0",
+    "html2pdf.js": "0.10.3",
     "mssql": "12.7.9",
     "nodemailer": "10.2.0",
+    "qrcode": "1.5.4",
     "react": "19.2.9",
     "react-dom": "19.2.9",
-    "recharts": "3.10.1"
+    "recharts": "3.10.1",
+    "three": "0.169.0"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "6.1.2",
