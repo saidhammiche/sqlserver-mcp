@@ -221,3 +221,130 @@
 2026-11-09T14:45:48.455Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgsXydMd8aSdStmov7QRz"}
 2026-11-09T14:46:58.954Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgsY4pi8iaKTD4CKmHmht"}
 2026-11-09T14:47:02.210Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgsY54f2ck5KnDKE8LBrF"}
+2026-11-10T02:00:00.117Z LOG   [Sicherung] 2026-11-10_020000: benutzer.json, massnahmen.json, einstellungen.json, anlagen.json
+2026-11-10T07:46:14.522Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgtsnrkYg1XbCUhrYkr5B"}
+2026-11-10T07:57:23.398Z LOG   ============================================================
+2026-11-10T07:57:23.398Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T07:57:23.398Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T07:57:23.398Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T07:57:23.399Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T07:57:23.399Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T07:57:23.399Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T07:57:23.400Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T07:57:23.400Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T07:57:23.400Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T07:57:23.400Z LOG   ============================================================
+2026-11-10T08:07:51.831Z LOG   ============================================================
+2026-11-10T08:07:51.832Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T08:07:51.832Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T08:07:51.832Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T08:07:51.832Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T08:07:51.832Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T08:07:51.832Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T08:07:51.833Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T08:07:51.833Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T08:07:51.833Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T08:07:51.833Z LOG   ============================================================
+2026-11-10T08:12:42.385Z LOG   ============================================================
+2026-11-10T08:12:42.385Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T08:12:42.385Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T08:12:42.385Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T08:12:42.385Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T08:12:42.386Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T08:12:42.387Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T08:12:42.387Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T08:12:42.387Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T08:12:42.387Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T08:12:42.387Z LOG   ============================================================
+2026-11-10T08:30:25.178Z LOG   ============================================================
+2026-11-10T08:30:25.178Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T08:30:25.179Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T08:30:25.179Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T08:30:25.179Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T08:30:25.180Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T08:30:25.181Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T08:30:25.181Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T08:30:25.182Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T08:30:25.182Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T08:30:25.182Z LOG   ============================================================
+2026-11-10T08:57:07.473Z LOG   ============================================================
+2026-11-10T08:57:07.473Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T08:57:07.473Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T08:57:07.473Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T08:57:07.473Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T08:57:07.474Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T08:57:07.474Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T08:57:07.474Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T08:57:07.474Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T08:57:07.475Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T08:57:07.475Z LOG   ============================================================
+2026-11-10T09:02:35.949Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgtycaKzyU7GkxA59in8k"}
+2026-11-10T09:02:39.957Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgtycsnykhFDTdyurpfGJ"}
+2026-11-10T09:26:46.731Z LOG   ============================================================
+2026-11-10T09:26:46.732Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T09:26:46.732Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T09:26:46.732Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T09:26:46.733Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T09:26:46.733Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T09:26:46.733Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T09:26:46.734Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T09:26:46.734Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T09:26:46.734Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T09:26:46.734Z LOG   ============================================================
+2026-11-10T09:32:42.581Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgu1ukSAvh8V8UPTmT45k"}
+2026-11-10T09:42:55.675Z LOG   ============================================================
+2026-11-10T09:42:55.676Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T09:42:55.677Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T09:42:55.677Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T09:42:55.677Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T09:42:55.678Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T09:42:55.678Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T09:42:55.678Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T09:42:55.679Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T09:42:55.679Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T09:42:55.679Z LOG   ============================================================
+2026-11-10T10:46:22.652Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgu7Xa6QR5CejLKbeaHmz"}
+2026-11-10T13:47:45.766Z LOG   ============================================================
+2026-11-10T13:47:45.766Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T13:47:45.766Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T13:47:45.766Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T13:47:45.766Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T13:47:45.767Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T13:47:45.767Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T13:47:45.767Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T13:47:45.768Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T13:47:45.768Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T13:47:45.768Z LOG   ============================================================
+2026-11-10T13:52:55.532Z LOG   ============================================================
+2026-11-10T13:52:55.532Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T13:52:55.532Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T13:52:55.532Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T13:52:55.533Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T13:52:55.533Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T13:52:55.533Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T13:52:55.533Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T13:52:55.534Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T13:52:55.534Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T13:52:55.534Z LOG   ============================================================
+2026-11-10T14:06:05.336Z LOG   ============================================================
+2026-11-10T14:06:05.337Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T14:06:05.338Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T14:06:05.338Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T14:06:05.338Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T14:06:05.338Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T14:06:05.339Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T14:06:05.339Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T14:06:05.339Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T14:06:05.340Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T14:06:05.340Z LOG   ============================================================
+2026-11-10T14:17:37.152Z LOG   ============================================================
+2026-11-10T14:17:37.152Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T14:17:37.153Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T14:17:37.153Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T14:17:37.153Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T14:17:37.153Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T14:17:37.153Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T14:17:37.154Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T14:17:37.154Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T14:17:37.154Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T14:17:37.154Z LOG   ============================================================
