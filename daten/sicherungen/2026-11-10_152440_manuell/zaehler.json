@@ -1,0 +1,89 @@
+{
+  "zaehler": [
+    {
+      "id": "hz",
+      "name": "Hauptzähler Strom",
+      "kurz": "HZ",
+      "einheit": "kWh",
+      "traeger": "Strom",
+      "eltern": null,
+      "anlage": null,
+      "quelle": "manuell",
+      "seu": null,
+      "reihe": null,
+      "gruppe": null,
+      "formel": null
+    },
+    {
+      "id": "p1",
+      "name": "Presse I",
+      "kurz": "P1",
+      "einheit": "kWh",
+      "traeger": "Strom",
+      "eltern": "hz",
+      "anlage": null,
+      "quelle": "seu",
+      "seu": "P1",
+      "reihe": null,
+      "gruppe": null,
+      "formel": null
+    },
+    {
+      "id": "p2",
+      "name": "Presse II",
+      "kurz": "P2",
+      "einheit": "kWh",
+      "traeger": "Strom",
+      "eltern": "hz",
+      "anlage": null,
+      "quelle": "seu",
+      "seu": "P2",
+      "reihe": null,
+      "gruppe": null,
+      "formel": null
+    },
+    {
+      "id": "ub",
+      "name": "UBC-Aufbereitung",
+      "kurz": "UB",
+      "einheit": "kWh",
+      "traeger": "Strom",
+      "eltern": "hz",
+      "anlage": null,
+      "quelle": "seu",
+      "seu": "UB",
+      "reihe": null,
+      "gruppe": null,
+      "formel": null
+    },
+    {
+      "id": "me",
+      "name": "ME",
+      "kurz": "ME",
+      "einheit": "kWh",
+      "traeger": "Strom",
+      "eltern": "hz",
+      "anlage": null,
+      "quelle": "seu",
+      "seu": "ME",
+      "reihe": null,
+      "gruppe": null,
+      "formel": null
+    },
+    {
+      "id": "rest",
+      "name": "Nicht gemessene Verbraucher",
+      "kurz": "REST",
+      "einheit": "kWh",
+      "traeger": "Strom",
+      "eltern": null,
+      "anlage": null,
+      "quelle": "formel",
+      "seu": null,
+      "reihe": null,
+      "gruppe": null,
+      "formel": "HZ - P1 - P2 - UB - ME"
+    }
+  ],
+  "ablesungen": []
+}

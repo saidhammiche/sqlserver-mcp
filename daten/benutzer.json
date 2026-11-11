@@ -6,50 +6,14 @@
     "aktiv": true,
     "hash": "f412b9b292b9eae2f1981a246b6d41be:e51c4dc5569cd5d2eb7c0d523a79c0e5f771e49e6a3c1c35d58d0a873c86e487ac24b47e27a024e895663d152928d4c9b24669a88d49e9e36cb4ed0c36bdba53",
     "erstellt": "2026-11-05T13:50:03.195Z",
-    "letzteAnmeldung": "2026-11-10T14:20:27.882Z",
+    "letzteAnmeldung": "2026-11-11T13:20:52.744Z",
     "email": null,
     "abo": {
       "woche": false,
       "kritisch": false,
       "fristen": false
     },
-    "cockpit": [
-      {
-        "id": "k_produktion",
-        "g": "s"
-      },
-      {
-        "id": "k_energie",
-        "g": "s"
-      },
-      {
-        "id": "k_kosten",
-        "g": "s"
-      },
-      {
-        "id": "k_warnungen",
-        "g": "s"
-      },
-      {
-        "id": "d_energie",
-        "g": "m"
-      },
-      {
-        "id": "d_kosten",
-        "g": "m"
-      },
-      {
-        "id": "d_fluss",
-        "g": "l"
-      },
-      {
-        "id": "l_fristen",
-        "g": "m"
-      },
-      {
-        "id": "l_stoerungen",
-        "g": "m"
-      }
-    ]
+    "cockpit": null,
+    "profil": "geschaeftsfuehrung"
   }
 ]

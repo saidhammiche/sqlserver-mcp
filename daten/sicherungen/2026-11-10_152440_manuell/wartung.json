@@ -1,0 +1,18 @@
+{
+  "plaene": [],
+  "stoerungen": [
+    {
+      "id": "de937914-1516-4207-8f8f-bc588ef5eaa5",
+      "anlage": "presse-1",
+      "titel": "kk",
+      "stufe": "stillstand",
+      "beschreibung": null,
+      "beginn": "2026-11-10T14:35:17.509Z",
+      "ende": null,
+      "ursache": null,
+      "behebung": null,
+      "gemeldetVon": "Admin",
+      "erstellt": "2026-11-10T14:35:18.146Z"
+    }
+  ]
+}

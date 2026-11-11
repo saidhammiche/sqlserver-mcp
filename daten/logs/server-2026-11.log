@@ -348,3 +348,145 @@
 2026-11-10T14:17:37.154Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
 2026-11-10T14:17:37.154Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
 2026-11-10T14:17:37.154Z LOG   ============================================================
+2026-11-10T14:43:41.226Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CguRdABzXgqDcEjdmSwTB"}
+2026-11-10T14:43:59.744Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CguReXcs3K8iJ2CxGquAy"}
+2026-11-10T14:44:48.221Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CguRi6uvgHtRnW8s6mRXc"}
+2026-11-10T15:06:24.360Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CguTMe9H7Li7PJ4DkqC9u"}
+2026-11-10T15:07:02.010Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CguTQRNR6z9eNiPivu8VK"}
+2026-11-10T15:07:47.970Z LOG   ============================================================
+2026-11-10T15:07:47.971Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-10T15:07:47.971Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-10T15:07:47.971Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-10T15:07:47.971Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-10T15:07:47.972Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-10T15:07:47.972Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-10T15:07:47.972Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-10T15:07:47.973Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-10T15:07:47.973Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-10T15:07:47.973Z LOG   ============================================================
+2026-11-10T15:24:40.994Z LOG   [Sicherung] 2026-11-10_152440_manuell: benutzer.json, massnahmen.json, einstellungen.json, anlagen.json, wartung.json, zaehler.json, aenderungen.log
+2026-11-11T02:00:00.027Z LOG   [Sicherung] 2026-11-11_020000: benutzer.json, massnahmen.json, einstellungen.json, anlagen.json, wartung.json, zaehler.json, aenderungen.log
+2026-11-11T07:33:58.388Z LOG   ============================================================
+2026-11-11T07:33:58.388Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-11T07:33:58.388Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-11T07:33:58.389Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-11T07:33:58.389Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-11T07:33:58.389Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-11T07:33:58.389Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-11T07:33:58.389Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-11T07:33:58.390Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-11T07:33:58.390Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-11T07:33:58.390Z LOG   ============================================================
+2026-11-11T07:46:02.930Z LOG   ============================================================
+2026-11-11T07:46:02.930Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-11T07:46:02.930Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-11T07:46:02.931Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-11T07:46:02.931Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-11T07:46:02.931Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-11T07:46:02.931Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-11T07:46:02.932Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-11T07:46:02.932Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-11T07:46:02.932Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-11T07:46:02.932Z LOG   ============================================================
+2026-11-11T08:02:15.913Z LOG   ============================================================
+2026-11-11T08:02:15.914Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-11T08:02:15.914Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-11T08:02:15.914Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-11T08:02:15.914Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-11T08:02:15.915Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-11T08:02:15.915Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-11T08:02:15.915Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-11T08:02:15.916Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-11T08:02:15.916Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-11T08:02:15.916Z LOG   ============================================================
+2026-11-11T08:12:58.348Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:13:03.305Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:13:12.738Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:13:17.231Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:13:24.543Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:13:34.708Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:13:40.976Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:13:51.490Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:14:11.636Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:14:28.281Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:14:34.672Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:14:39.939Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:14:47.267Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:14:54.608Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:15:15.896Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:15:59.196Z ERROR [Absturz abgefangen] ReferenceError: Cannot access 'route' before initialization
+    at file:///app/server.js:1431:32
+2026-11-11T08:16:45.798Z LOG   ============================================================
+2026-11-11T08:16:45.798Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-11T08:16:45.798Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-11T08:16:45.799Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-11T08:16:45.799Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-11T08:16:45.799Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-11T08:16:45.799Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-11T08:16:45.799Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-11T08:16:45.800Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-11T08:16:45.800Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-11T08:16:45.800Z LOG   ============================================================
+2026-11-11T08:49:03.459Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgvrPbhBftpZPfhms3rCe"}
+2026-11-11T08:49:24.337Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011CgvrR9GFxWGm43qQHLVDp"}
+2026-11-11T10:13:23.619Z LOG   ============================================================
+2026-11-11T10:13:23.620Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-11T10:13:23.620Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-11T10:13:23.620Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-11T10:13:23.621Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-11T10:13:23.621Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-11T10:13:23.621Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-11T10:13:23.621Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-11T10:13:23.622Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-11T10:13:23.622Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-11T10:13:23.622Z LOG   ============================================================
+2026-11-11T10:20:00.869Z LOG   ============================================================
+2026-11-11T10:20:00.881Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-11T10:20:00.881Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-11T10:20:00.882Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-11T10:20:00.882Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-11T10:20:00.882Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-11T10:20:00.883Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-11T10:20:00.883Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-11T10:20:00.884Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-11T10:20:00.884Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-11T10:20:00.884Z LOG   ============================================================
+2026-11-11T12:22:11.897Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgw8eHnhFgfHie5X6ThXA"}
+2026-11-11T12:22:14.756Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Cgw8eWJ26g5rT8MEwjTMy"}
+2026-11-11T13:15:17.430Z LOG   ============================================================
+2026-11-11T13:15:17.431Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-11T13:15:17.431Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-11T13:15:17.431Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-11T13:15:17.431Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-11T13:15:17.432Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-11T13:15:17.432Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-11T13:15:17.432Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-11T13:15:17.432Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-11T13:15:17.433Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-11T13:15:17.433Z LOG   ============================================================
+2026-11-11T13:20:32.361Z LOG   ============================================================
+2026-11-11T13:20:32.362Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-11T13:20:32.362Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-11T13:20:32.362Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-11T13:20:32.362Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-11T13:20:32.363Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-11T13:20:32.363Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-11T13:20:32.363Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-11T13:20:32.363Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-11T13:20:32.364Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-11T13:20:32.364Z LOG   ============================================================

@@ -4,5 +4,8 @@
     "ziel": 0,
     "co2": 0,
     "preis": 0
+  },
+  "co2": {
+    "faktoren": {}
   }
 }

@@ -13,8 +13,10 @@
     "drehung": 0,
     "beschreibung": "Pressenhalle mit Presse I, Presse II und Presse III. Fläche, Baujahr und Ansprechpartner hier ergänzen.",
     "notizen": "",
+    "kostenstelle": "",
     "daten": [],
     "links": [],
+    "live": null,
     "dokumente": []
   },
   {
@@ -31,26 +33,10 @@
     "drehung": 0,
     "beschreibung": "Halle mit UBC-Aufbereitung und der Anlage ME. Fläche, Baujahr und Ansprechpartner hier ergänzen.",
     "notizen": "",
+    "kostenstelle": "",
     "daten": [],
     "links": [],
-    "dokumente": []
-  },
-  {
-    "id": "presse-1",
-    "name": "Presse I",
-    "typ": "presse",
-    "halle": "halle-1",
-    "seu": "P1",
-    "x": -32,
-    "z": -3,
-    "breite": 6,
-    "tiefe": 5,
-    "hoehe": 7,
-    "drehung": 0,
-    "beschreibung": "",
-    "notizen": "",
-    "daten": [],
-    "links": [],
+    "live": null,
     "dokumente": []
   },
   {
@@ -67,8 +53,10 @@
     "drehung": 0,
     "beschreibung": "",
     "notizen": "",
+    "kostenstelle": "",
     "daten": [],
     "links": [],
+    "live": null,
     "dokumente": []
   },
   {
@@ -85,8 +73,10 @@
     "drehung": 0,
     "beschreibung": "",
     "notizen": "",
+    "kostenstelle": "",
     "daten": [],
     "links": [],
+    "live": null,
     "dokumente": []
   },
   {
@@ -103,8 +93,10 @@
     "drehung": 0,
     "beschreibung": "",
     "notizen": "",
+    "kostenstelle": "",
     "daten": [],
     "links": [],
+    "live": null,
     "dokumente": []
   },
   {
@@ -121,8 +113,10 @@
     "drehung": 0,
     "beschreibung": "Anlage mit erfassten Betriebsstunden. Genaue Bezeichnung mit der Fachabteilung klären.",
     "notizen": "",
+    "kostenstelle": "",
     "daten": [],
     "links": [],
+    "live": null,
     "dokumente": []
   },
   {
@@ -139,8 +133,10 @@
     "drehung": 0,
     "beschreibung": "",
     "notizen": "",
+    "kostenstelle": "",
     "daten": [],
     "links": [],
+    "live": null,
     "dokumente": []
   }
 ]

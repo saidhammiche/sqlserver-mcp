@@ -69,6 +69,18 @@ try {
 process.on("unhandledRejection", (e) => console.error("[Unbehandelter Fehler]", e?.stack || e?.message || e));
 process.on("uncaughtException", (e) => console.error("[Absturz abgefangen]", e?.stack || e?.message || e));
 const GESTARTET = new Date();
+// erreurs récentes du serveur (pour la page « Systemzustand ») : les 300 dernières, en mémoire
+const FEHLERPUFFER = [];
+{
+  const original = console.error.bind(console);
+  console.error = (...teile) => {
+    try {
+      FEHLERPUFFER.unshift({ zeit: new Date().toISOString(), text: teile.map(x => (x instanceof Error ? x.message : typeof x === "string" ? x : JSON.stringify(x))).join(" ").slice(0, 600) });
+      if (FEHLERPUFFER.length > 300) FEHLERPUFFER.length = 300;
+    } catch { /* ne jamais bloquer la journalisation */ }
+    original(...teile);
+  };
+}
 const VERSION = (() => { try { return JSON.parse(fs.readFileSync(path.join(DOSSIER, "package.json"), "utf8")).version; } catch { return "?"; } })();
 
 // --- Calculs (EnPI, prévision, alertes) : lus dans la section « BEGIN RECHNEN … END RECHNEN » de App.jsx ---
@@ -1124,7 +1136,7 @@ function pwStimmt(pw, gespeichert) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 const oeffentlich = (b) => ({ login: b.login, name: b.name, rolle: b.rolle, aktiv: b.aktiv !== false, letzteAnmeldung: b.letzteAnmeldung ?? null, erstellt: b.erstellt ?? null,
-  email: b.email ?? null, abo: { woche: !!b.abo?.woche, monat: !!b.abo?.monat, kritisch: !!b.abo?.kritisch, fristen: !!b.abo?.fristen } , cockpit: Array.isArray(b.cockpit) ? b.cockpit : null });
+  email: b.email ?? null, abo: { woche: !!b.abo?.woche, monat: !!b.abo?.monat, kritisch: !!b.abo?.kritisch, fristen: !!b.abo?.fristen } , cockpit: Array.isArray(b.cockpit) ? b.cockpit : null, profil: b.profil ?? null });
 // adresse et abonnements (création / modification par l'admin)
 function emailUndAbo(ziel, d) {
   if (d.email !== undefined) {
@@ -1282,7 +1294,7 @@ app.delete("/api/benutzer/:login", (req, res) => {
 //   BACKUP_STUNDE  heure de la sauvegarde nocturne (défaut : 2)
 // La .env n'est PAS sauvegardée (elle contient des mots de passe) : la garder à part.
 // ---------------------------------------------------------------------
-const SICHERUNG_DATEIEN = ["benutzer.json", "massnahmen.json", "kommentare.json", "einstellungen.json", "anlagen.json", "wartung.json", "zaehler.json", "iso50001.json", "aenderungen.log"];
+const SICHERUNG_DATEIEN = ["benutzer.json", "massnahmen.json", "kommentare.json", "einstellungen.json", "anlagen.json", "wartung.json", "zaehler.json", "iso50001.json", "papierkorb.json", "aenderungen.log"];
 const WIEDERHERSTELLBAR = ["benutzer.json", "massnahmen.json", "kommentare.json", "einstellungen.json", "anlagen.json", "wartung.json", "zaehler.json", "iso50001.json"];
 const BACKUP_ORDNER = path.resolve(DATEN, env("BACKUP_ORDNER", "sicherungen"));
 const BACKUP_ZIEL = env("BACKUP_ZIEL", "") ? path.resolve(env("BACKUP_ZIEL")) : null;
@@ -1327,6 +1339,118 @@ function naechtlicheSicherung() {
   const n = new Date(), next = new Date(n); next.setHours(BACKUP_STUNDE, 0, 0, 0);
   if (next <= n) next.setDate(next.getDate() + 1);
   setTimeout(() => { try { sichern("auto"); } catch (err) { console.error("[Sicherung]", err.message); } naechtlicheSicherung(); }, next - n);
+}
+
+// ---------------------------------------------------------------------
+// Systemzustand : 12 contrôles (base, sauvegarde, disque, e-mail, fraîcheur des données, erreurs …)
+//   page pour les administrateurs + contrôle toutes les heures, e-mail aux administrateurs en cas d'erreur
+// ---------------------------------------------------------------------
+function ordnerGroesse(p, tiefe = 0) {
+  if (tiefe > 6) return 0;
+  let s = 0;
+  try { for (const e of fs.readdirSync(p, { withFileTypes: true })) { const v = path.join(p, e.name); s += e.isDirectory() ? ordnerGroesse(v, tiefe + 1) : fs.statSync(v).size; } } catch { /* illisible */ }
+  return s;
+}
+const mb = (b) => (b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : `${Math.max(0.1, b / 1e6).toFixed(1)} MB`);
+async function systemPruefen() {
+  const p = [], add = (key, titel, status, wert, text, hinweis = null) => p.push({ key, titel, status, wert, text, hinweis });
+  // 1. base de données
+  const t0 = Date.now();
+  try {
+    const r = await Promise.race([(await pool()).request().query("SELECT @@VERSION AS v, DB_NAME() AS db"), new Promise((_, n) => setTimeout(() => n(new Error("keine Antwort nach 15 s")), 15000))]);
+    const ms = Date.now() - t0;
+    add("db", "Datenbank", ms > 3000 ? "warnung" : "ok", `${ms} ms`, `Verbunden mit ${r.recordset[0].db} (${String(r.recordset[0].v).split("\n")[0].replace(/\s+/g, " ").slice(0, 70)}).`,
+      ms > 3000 ? "Die Datenbank antwortet langsam: Netzwerk und Auslastung des SQL Servers prüfen." : null);
+  } catch (err) { add("db", "Datenbank", "fehler", "keine Verbindung", err.message, "SQL-Server-Dienst, Netzwerk und Zugangsdaten (DB_SERVER, DB_USER, DB_PASSWORD in der .env) prüfen."); }
+  // 2. sauvegarde
+  const sg = sicherungenListe(), letzte = sg[0];
+  if (!letzte) add("sicherung", "Datensicherung", "fehler", "keine", "Es gibt noch keine Sicherung.", "Unter „Benutzer › Sicherung“ eine Sicherung anlegen; prüfen, ob der Ordner beschreibbar ist.");
+  else {
+    const h = (Date.now() - new Date(letzte.zeit)) / 3600000, zweit = BACKUP_ZIEL ? fs.existsSync(BACKUP_ZIEL) : null;
+    add("sicherung", "Datensicherung", h > 72 || zweit === false ? "fehler" : h > 26 ? "warnung" : "ok", h < 1 ? "vor weniger als 1 h" : h < 48 ? `vor ${Math.round(h)} h` : `vor ${Math.round(h / 24)} Tagen`,
+      `${sg.length} Sicherungen vorhanden${BACKUP_ZIEL ? (zweit ? `, Kopie nach ${BACKUP_ZIEL}` : `; das zweite Ziel ${BACKUP_ZIEL} ist NICHT erreichbar`) : ", nur auf diesem Server"}.`,
+      h > 26 ? "Die nächtliche Sicherung ist ausgeblieben: Server-Protokoll prüfen." : zweit === false ? "Netzlaufwerk oder Pfad von BACKUP_ZIEL prüfen." : !BACKUP_ZIEL ? "Empfehlung: BACKUP_ZIEL auf ein anderes Laufwerk oder einen Netzwerkpfad setzen, damit die Sicherung einen Serverausfall übersteht." : null);
+  }
+  // 3. espace disque
+  try {
+    const f = fs.statfsSync(DATEN), frei = f.bavail * f.bsize, ges = f.blocks * f.bsize, q = ges ? frei / ges : 1;
+    add("platz", "Speicherplatz", frei < 1e9 ? "fehler" : frei < 5e9 || q < 0.05 ? "warnung" : "ok", `${mb(frei)} frei`, `${Math.round(q * 100)} % des Laufwerks frei (von ${mb(ges)}).`,
+      frei < 5e9 || q < 0.05 ? "Speicher freigeben oder das Laufwerk vergrößern; alte Sicherungen werden automatisch gelöscht (BACKUP_ANZAHL)." : null);
+  } catch { add("platz", "Speicherplatz", "info", "unbekannt", "Der freie Speicher konnte nicht ermittelt werden."); }
+  // 4. dossier de données
+  const daten = ordnerGroesse(DATEN), protokollGr = (() => { try { return fs.statSync(path.join(DATEN, "aenderungen.log")).size; } catch { return 0; } })();
+  add("daten", "Datenordner", protokollGr > 200e6 ? "warnung" : "ok", mb(daten), `Benutzer, Zähler, Dokumente, Sicherungen; davon Änderungsprotokoll ${mb(protokollGr)}.`,
+    protokollGr > 200e6 ? "Das Änderungsprotokoll ist sehr groß: alte Einträge archivieren (Datei aenderungen.log umbenennen)." : null);
+  // 5. e-mail
+  if (!mailer) add("mail", "E-Mail-Versand", "info", "nicht eingerichtet", "Benachrichtigungen, Berichte und Systemmeldungen werden nicht versendet.", "SMTP_HOST, SMTP_USER und SMTP_PASS in der .env eintragen.");
+  else {
+    const letzteMail = zustandLesen().verlauf?.[0];
+    try {
+      await Promise.race([mailer.verify(), new Promise((_, n) => setTimeout(() => n(new Error("Zeitüberschreitung")), 10000))]);
+      add("mail", "E-Mail-Versand", letzteMail && letzteMail.ok === false ? "warnung" : "ok", "erreichbar",
+        letzteMail ? `Letzte E-Mail ${new Date(letzteMail.zeit).toLocaleString("de-DE")}: ${letzteMail.ok ? "gesendet" : `fehlgeschlagen (${letzteMail.fehler})`}.` : "Mailserver erreichbar; noch keine E-Mail gesendet.",
+        letzteMail?.ok === false ? "Die letzte E-Mail ist fehlgeschlagen: Empfängeradresse und Mailserver-Protokoll prüfen." : null);
+    } catch (err) { add("mail", "E-Mail-Versand", "fehler", "nicht erreichbar", err.message, "Mailserver, Zugangsdaten und Firewall (Port SMTP_PORT) prüfen."); }
+  }
+  // 6. et 7. fraîcheur des données (le mois en cours n'est en général pas encore saisi)
+  const jetzt = new Date();
+  const letzterMonat = async (fn) => { for (const j of [jetzt.getFullYear(), jetzt.getFullYear() - 1]) { const d = await fn(j); const m = Math.max(0, ...(d.aktuell || []).map(x => Number(x.Monat) || 0)); if (m) return { j, m }; } return null; };
+  for (const [key, titel, fn] of [["produktion", "Produktionsdaten", produktion], ["energie", "Energiedaten", energie]]) {
+    try {
+      const x = await letzterMonat(fn);
+      const alter = x ? (jetzt.getFullYear() - x.j) * 12 + jetzt.getMonth() + 1 - x.m : null;
+      add(key, titel, alter == null ? "fehler" : alter <= 2 ? "ok" : alter === 3 ? "warnung" : "fehler", x ? `bis ${String(x.m).padStart(2, "0")}/${x.j}` : "keine Daten",
+        x ? (alter <= 1 ? "Aktuell." : `Der letzte erfasste Monat liegt ${alter} Monate zurück.`) : "In den letzten zwei Jahren wurden keine Daten gefunden.",
+        alter == null || alter > 2 ? "Prüfen, ob die Daten in die Datenbank übertragen werden (Import, Schnittstelle, manuelle Eingabe)." : null);
+    } catch (err) { add(key, titel, "fehler", "nicht lesbar", err.message); }
+  }
+  // 8. assistant IA
+  add("ki", "KI-Assistent", claude ? "ok" : "info", claude ? "eingerichtet" : "nicht eingerichtet", claude ? "Assistent und Kommentar-Entwürfe stehen zur Verfügung." : "Ohne KI arbeiten Assistent und Monatskommentar mit einfachen Auswertungen.");
+  // 9. surveillance des pics
+  const sp = [...spitzenStatus.values()], alt = sp.filter(x => x.status === "veraltet");
+  add("spitzen", "Spitzenlast-Überwachung", alt.length ? "warnung" : sp.length ? "ok" : "info", sp.length ? `${sp.length} überwacht` : "keine",
+    sp.length ? (alt.length ? `Keine aktuellen Messwerte für: ${alt.map(x => x.name).join(", ")}.` : "Alle überwachten Messreihen liefern aktuelle Werte.") : "Es ist keine Grenzwert-Überwachung eingeschaltet.",
+    alt.length ? "Die Zählerdaten kommen nicht mehr in der Datenbank an: Zähler, Gateway oder Import prüfen." : null);
+  // 10. erreurs du serveur
+  const n24 = FEHLERPUFFER.filter(e => Date.now() - new Date(e.zeit) < 86400000).length;
+  add("fehler", "Fehlermeldungen (24 h)", n24 >= 50 ? "fehler" : n24 >= 5 ? "warnung" : "ok", String(n24), n24 ? `Letzte: ${FEHLERPUFFER[0].text.slice(0, 120)}` : "Keine Fehler in den letzten 24 Stunden.",
+    n24 >= 5 ? "Die Liste unten zeigt die Meldungen; häufige gleiche Meldungen deuten auf ein dauerhaftes Problem hin." : null);
+  // 11. comptes administrateurs
+  const admins = benutzerLesen().filter(b => b.rolle === "admin" && b.aktiv !== false), ohneMail = admins.filter(b => !b.email);
+  add("admins", "Administratoren", admins.length >= 2 && !ohneMail.length ? "ok" : "warnung", String(admins.length),
+    `${admins.length} aktive Administrator(en)${ohneMail.length ? `, ${ohneMail.length} ohne E-Mail-Adresse (erhält keine Systemmeldungen)` : ""}.`,
+    admins.length < 2 ? "Einen zweiten Administrator anlegen, damit der Zugang bei Urlaub oder Ausfall nicht verloren geht." : ohneMail.length ? "E-Mail-Adresse im Benutzermenü eintragen." : null);
+  // 12. HTTPS et serveur
+  const rss = process.memoryUsage().rss;
+  add("server", "Server", rss > 1.5e9 ? "warnung" : APP_URL.startsWith("https") ? "ok" : "info", `läuft seit ${Math.round(process.uptime() / 3600)} h`,
+    `Version ${VERSION}, Node ${process.version}, Speicher ${mb(rss)}, Adresse ${APP_URL}.`,
+    rss > 1.5e9 ? "Hoher Speicherverbrauch: Dienst neu starten und beobachten." : !APP_URL.startsWith("https") ? "Für die Handy-App (Installation, Offline-Start) wird eine HTTPS-Adresse benötigt." : null);
+  const gesamt = p.some(x => x.status === "fehler") ? "fehler" : p.some(x => x.status === "warnung") ? "warnung" : "ok";
+  return { zeit: new Date().toISOString(), gesamt, pruefungen: p, fehler: FEHLERPUFFER.slice(0, 100), standort: STANDORT || null };
+}
+app.get("/api/system/zustand", async (req, res) => {
+  try { nurAdmin(req); res.json(await systemPruefen()); }
+  catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+
+// contrôle toutes les heures : e-mail aux administrateurs pour chaque nouveau problème (puis rappel après 24 h)
+const systemGemeldet = new Map();
+async function systemUeberwachen() {
+  const z = await systemPruefen();
+  const probleme = z.pruefungen.filter(x => x.status === "fehler");
+  for (const k of [...systemGemeldet.keys()]) if (!probleme.some(x => x.key === k)) systemGemeldet.delete(k);     // résolu
+  const neu = probleme.filter(x => !systemGemeldet.has(x.key) || Date.now() - systemGemeldet.get(x.key) > 24 * 3600000);
+  if (!neu.length || !mailer) return;
+  const an = benutzerLesen().filter(b => b.rolle === "admin" && b.aktiv !== false && b.email).map(b => b.email);
+  if (!an.length) return;
+  neu.forEach(x => systemGemeldet.set(x.key, Date.now()));
+  const html = mailRahmen("Systemzustand: Handlungsbedarf", `Automatische Prüfung vom ${new Date().toLocaleString("de-DE")}`,
+    liste(neu.map(x => zeile("#CF4B3B", `${x.titel}: ${x.wert}`, `${x.text}${x.hinweis ? ` – Was tun: ${x.hinweis}` : ""}`))), { text: "Systemzustand öffnen", url: `${APP_URL}/#system` });
+  await mailSenden(an, `${APP_NAME} – Systemzustand: ${neu.map(x => x.titel).join(", ")}`, html, textVersion(html), "system").catch(() => {});
+}
+if (process.env.NODE_ENV !== "test") {
+  setTimeout(() => systemUeberwachen().catch(err => console.error("[Systemzustand]", err.message)), 3 * 60 * 1000);
+  setInterval(() => systemUeberwachen().catch(err => console.error("[Systemzustand]", err.message)), 60 * 60 * 1000);
 }
 
 app.get("/api/system", async (req, res) => {
@@ -1619,13 +1743,73 @@ const dokumentVon = (req) => {
 };
 
 app.get("/api/anlagen", route((req) => ({ liste: anlagenLesen(), darf: darfSchreiben(req) })));
+// ---------------------------------------------------------------------
+// Corbeille du Werksplan : éléments supprimés (avec documents) + éléments retrouvés dans les sauvegardes
+// ---------------------------------------------------------------------
+const PAPIERKORB_DATEI = path.join(DATEN, "papierkorb.json"), PAPIERKORB_DOKU = path.join(DATEN, "papierkorb", "dokumente");
+function papierkorbLesen() {
+  try { return JSON.parse(fs.readFileSync(PAPIERKORB_DATEI, "utf8")); }
+  catch (err) { if (err.code === "ENOENT") return []; throw new Error(`papierkorb.json ist beschädigt: ${err.message}`); }
+}
+function papierkorbSchreiben(l) { const tmp = PAPIERKORB_DATEI + ".tmp"; fs.writeFileSync(tmp, JSON.stringify(l, null, 2), "utf8"); fs.renameSync(tmp, PAPIERKORB_DATEI); }
+function geloeschteElemente() {
+  const jetzt = new Set(anlagenLesen().map(a => a.id)), gesehen = new Set();
+  const korb = papierkorbLesen().filter(x => x?.element?.id && !jetzt.has(x.element.id) && !gesehen.has(x.element.id) && gesehen.add(x.element.id))
+    .map(x => ({ ...x, quelle: "papierkorb" }));
+  const ausSicherung = [];
+  for (const sg of sicherungenListe()) {                    // la plus récente d'abord
+    try {
+      const l = JSON.parse(fs.readFileSync(path.join(BACKUP_ORDNER, sg.name, "anlagen.json"), "utf8"));
+      for (const a of Array.isArray(l) ? l : []) if (a?.id && !jetzt.has(a.id) && !gesehen.has(a.id)) { gesehen.add(a.id); ausSicherung.push({ element: a, quelle: "sicherung", sicherung: sg.name, stand: sg.zeit }); }
+    } catch { /* sauvegarde sans anlagen.json */ }
+  }
+  return [...korb, ...ausSicherung];
+}
+app.get("/api/anlagen/papierkorb", route((req) => {
+  if (!darfSchreiben(req)) throw fehler400("Keine Berechtigung.", 403);
+  const namen = new Map(anlagenLesen().map(a => [a.id, a.name]));
+  return geloeschteElemente().map(x => ({ id: x.element.id, name: x.element.name, typ: x.element.typ, halle: namen.get(x.element.halle) ?? null, quelle: x.quelle,
+    geloeschtAm: x.geloeschtAm ?? null, von: x.von ?? null, stand: x.stand ?? null, dokumente: (x.element.dokumente || []).length }));
+}));
+app.post("/api/anlagen/wiederherstellen", (req, res) => {
+  try {
+    if (!darfSchreiben(req)) throw fehler400("Keine Berechtigung: Ihre Rolle erlaubt nur das Lesen.", 403);
+    const id = String(req.body?.id || ""), liste = anlagenLesen();
+    if (liste.some(a => a.id === id)) throw fehler400("Dieses Element ist bereits im Werksplan.");
+    const fund = geloeschteElemente().find(x => x.element.id === id);
+    if (!fund) throw fehler400("Element nicht gefunden.", 404);
+    const el = { ...fund.element };
+    if (el.halle && !liste.some(h => h.id === el.halle)) el.halle = null;      // halle disparue entre-temps
+    // documents : retour de la corbeille ; sans fichier (supprimé avant la corbeille) l'entrée est retirée
+    const korbDoku = path.join(PAPIERKORB_DOKU, id), ziel = path.join(DOKU_ORDNER, id);
+    if (fs.existsSync(korbDoku) && !fs.existsSync(ziel)) { fs.mkdirSync(DOKU_ORDNER, { recursive: true }); fs.renameSync(korbDoku, ziel); }
+    const vorher = (el.dokumente || []).length;
+    el.dokumente = (el.dokumente || []).filter(d => d?.datei && fs.existsSync(path.join(ziel, d.datei)));
+    const neu = anlagenPruefen([...liste, el], [...liste, el]);
+    anlagenSchreiben(neu);
+    papierkorbSchreiben(papierkorbLesen().filter(x => x?.element?.id !== id));
+    liveCache = null;
+    protokoll({ aktion: "WERKSPLAN WIEDERHERGESTELLT", wer: req.benutzer.login, tabelle: "anlagen.json", neu: { name: el.name, quelle: fund.quelle === "sicherung" ? `Sicherung ${fund.sicherung}` : "Papierkorb" } });
+    res.json({ name: el.name, dokumente: el.dokumente.length, dokumenteFehlen: vorher - el.dokumente.length });
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+
 app.put("/api/anlagen", (req, res) => {
   try {
     if (!darfSchreiben(req)) throw fehler400("Keine Berechtigung: Ihre Rolle erlaubt nur das Lesen.", 403);
     const bisher = anlagenLesen();
     const neu = anlagenPruefen(req.body?.liste, bisher);
     const entfernt = bisher.filter(a => !neu.some(n => n.id === a.id));
-    for (const a of entfernt) fs.rmSync(path.join(DOKU_ORDNER, a.id), { recursive: true, force: true });
+    if (entfernt.length) {                                   // corbeille : l'élément et ses documents restent récupérables
+      const korb = papierkorbLesen();
+      for (const a of entfernt) {
+        const quelle = path.join(DOKU_ORDNER, a.id), ziel = path.join(PAPIERKORB_DOKU, a.id);
+        try { if (fs.existsSync(quelle)) { fs.mkdirSync(PAPIERKORB_DOKU, { recursive: true }); fs.rmSync(ziel, { recursive: true, force: true }); fs.renameSync(quelle, ziel); } }
+        catch (err) { console.error("[Papierkorb]", err.message); }
+        korb.unshift({ element: a, geloeschtAm: new Date().toISOString(), von: req.benutzer.name });
+      }
+      papierkorbSchreiben(korb.slice(0, 200));
+    }
     anlagenSchreiben(neu);
     liveCache = null;                                       // configuration modifiée : relire tout de suite
     const geaendert = neu.filter(n => JSON.stringify(n) !== JSON.stringify(bisher.find(b => b.id === n.id))).map(n => n.name);
@@ -2561,7 +2745,7 @@ function isoPruefen(d) {
 // 5j. Änderungsprotokoll : qui a modifié quoi et quand (aenderungen.log), avec filtres, pour bearbeiter / admin
 //     les 20 derniers Mo du fichier au plus ; les entrées les plus récentes d'abord
 // ---------------------------------------------------------------------
-app.get("/api/protokoll", route((req) => {
+app.get("/api/aenderungen", route((req) => {
   if (!darfSchreiben(req)) throw fehler400("Das Änderungsprotokoll ist Bearbeitern und Administratoren vorbehalten.", 403);
   const datei = path.join(DATEN, "aenderungen.log");
   if (!fs.existsSync(datei)) return { eintraege: [], benutzer: [], aktionen: [], gesamt: 0, gekuerzt: false };
@@ -2886,6 +3070,34 @@ function benachrichtigungenPlanen() {
 
 // --- API ---
 // tableau de bord personnel (widgets choisis, ordre et taille) : enregistré pour chaque utilisateur
+// domaine de travail (menu et Cockpit adaptés au métier) : choisi par l'utilisateur ou fixé par l'administrateur
+const PROFILE_SERVER = ["geschaeftsfuehrung", "energiemanager", "produktion", "instandhaltung", "werker", "alle"];
+app.put("/api/auth/arbeitsbereich", (req, res) => {
+  const sitzung = sitzungVon(req);
+  if (!sitzung) return res.status(401).json({ fehler: "Bitte anmelden.", anmeldung: true });
+  try {
+    const p = String(req.body?.profil || "");
+    if (!PROFILE_SERVER.includes(p)) throw fehler400("Unbekannter Arbeitsbereich.");
+    const liste = benutzerLesen(), b = liste.find(x => x.login === sitzung.benutzer.login);
+    b.profil = p;
+    if (req.body?.cockpitZuruecksetzen) b.cockpit = null;        // le Cockpit reprend la composition du nouveau domaine
+    benutzerSchreiben(liste);
+    res.json(oeffentlich(b));
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
+app.put("/api/benutzer/:login/arbeitsbereich", (req, res) => {
+  try {
+    nurAdmin(req);
+    const p = String(req.body?.profil || "");
+    if (!PROFILE_SERVER.includes(p)) throw fehler400("Unbekannter Arbeitsbereich.");
+    const liste = benutzerLesen(), b = liste.find(x => x.login === req.params.login);
+    if (!b) throw fehler400("Benutzer nicht gefunden.", 404);
+    const alt = b.profil ?? null; b.profil = p; b.cockpit = null;
+    benutzerSchreiben(liste);
+    protokoll({ aktion: "ARBEITSBEREICH ÄNDERN", wer: req.benutzer.login, tabelle: "benutzer.json", schluessel: { login: b.login }, alt: { profil: alt }, neu: { profil: p } });
+    res.json(oeffentlich(b));
+  } catch (err) { res.status(err.status || 500).json({ fehler: err.message }); }
+});
 app.put("/api/auth/cockpit", (req, res) => {
   const sitzung = sitzungVon(req);
   if (!sitzung) return res.status(401).json({ fehler: "Bitte anmelden.", anmeldung: true });
