@@ -490,3 +490,14 @@
 2026-11-11T13:20:32.363Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
 2026-11-11T13:20:32.364Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
 2026-11-11T13:20:32.364Z LOG   ============================================================
+2026-11-11T13:58:16.878Z LOG   ============================================================
+2026-11-11T13:58:16.879Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-11T13:58:16.879Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-11T13:58:16.879Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-11T13:58:16.879Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-11T13:58:16.880Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-11T13:58:16.880Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-11T13:58:16.880Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-11T13:58:16.881Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-11T13:58:16.881Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-11T13:58:16.881Z LOG   ============================================================
