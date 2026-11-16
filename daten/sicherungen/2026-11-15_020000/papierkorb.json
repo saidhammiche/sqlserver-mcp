@@ -1,0 +1,26 @@
+[
+  {
+    "element": {
+      "id": "preaae-2-mwbvqw08",
+      "name": "preaae 2",
+      "typ": "presse",
+      "halle": "halle-1",
+      "seu": null,
+      "x": 0,
+      "z": 0,
+      "breite": 6,
+      "tiefe": 5,
+      "hoehe": 6,
+      "drehung": 0,
+      "beschreibung": "",
+      "notizen": "",
+      "kostenstelle": "zz",
+      "daten": [],
+      "links": [],
+      "live": null,
+      "dokumente": []
+    },
+    "geloeschtAm": "2026-11-11T08:51:51.147Z",
+    "von": "Admin"
+  }
+]

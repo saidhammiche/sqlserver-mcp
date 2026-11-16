@@ -501,3 +501,24 @@
 2026-11-11T13:58:16.881Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
 2026-11-11T13:58:16.881Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
 2026-11-11T13:58:16.881Z LOG   ============================================================
+2026-11-12T02:00:00.027Z LOG   [Sicherung] 2026-11-12_020000: benutzer.json, massnahmen.json, einstellungen.json, anlagen.json, wartung.json, zaehler.json, papierkorb.json, aenderungen.log
+2026-11-13T02:00:00.078Z LOG   [Sicherung] 2026-11-13_020000: benutzer.json, massnahmen.json, einstellungen.json, anlagen.json, wartung.json, zaehler.json, papierkorb.json, aenderungen.log
+2026-11-14T02:00:00.038Z LOG   [Sicherung] 2026-11-14_020000: benutzer.json, massnahmen.json, einstellungen.json, anlagen.json, wartung.json, zaehler.json, papierkorb.json, aenderungen.log
+2026-11-15T02:00:00.028Z LOG   [Sicherung] 2026-11-15_020000: benutzer.json, massnahmen.json, einstellungen.json, anlagen.json, wartung.json, zaehler.json, papierkorb.json, aenderungen.log
+2026-11-16T02:00:00.067Z LOG   [Sicherung] 2026-11-16_020000: benutzer.json, massnahmen.json, einstellungen.json, anlagen.json, wartung.json, zaehler.json, papierkorb.json, aenderungen.log
+2026-11-16T08:00:58.092Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Ch6FmV1REJPu4EUhoHyJT"}
+2026-11-16T08:01:03.997Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Ch6FmvZpYtbpNiQdK46zP"}
+2026-11-16T08:01:10.014Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Ch6FnNMMgh5hN7AAXwe1M"}
+2026-11-16T08:01:20.053Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Ch6Fo7G2dmx3taXPqjuBN"}
+2026-11-16T08:11:37.953Z ERROR [Claude] 400 {"type":"error","error":{"type":"invalid_request_error","message":"Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits."},"request_id":"req_011Ch6GaefREkFWmimnuLuvG"}
+2026-11-16T09:27:25.100Z LOG   ============================================================
+2026-11-16T09:27:25.101Z LOG    MRS Produktion 4.0.0 läuft: http://185.80.92.91:3020
+2026-11-16T09:27:25.101Z LOG    Datenbank: sql.managee.de:1433/MRS_BI
+2026-11-16T09:27:25.101Z LOG    KI-Assistent: Claude aktiv (claude-sonnet-5-5)
+2026-11-16T09:27:25.102Z LOG    Bearbeiten: AKTIV für Rollen Bearbeiter/Admin (alle Tabellen mit Primärschlüssel) – Protokoll: aenderungen.log
+2026-11-16T09:27:25.103Z LOG    Anmeldung: aktiv (1 Benutzer)
+2026-11-16T09:27:25.103Z LOG    Im Netzwerk erreichbar (0.0.0.0), Anmeldung erforderlich
+2026-11-16T09:27:25.104Z LOG    Sicherungen: /app/daten/sicherungen (täglich 2:00 Uhr, 30 behalten)
+2026-11-16T09:27:25.104Z LOG    Protokoll: /app/daten/logs/server-2026-11.log
+2026-11-16T09:27:25.105Z LOG    E-Mail: nicht eingerichtet (SMTP_HOST in .env)
+2026-11-16T09:27:25.105Z LOG   ============================================================

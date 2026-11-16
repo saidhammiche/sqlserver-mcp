@@ -6961,6 +6961,336 @@ function ArbeitsbereichWahl({ offen, benutzer, gespeichert, schliessen, erstmals
   );
 }
 
+// =====================================================================
+// Standort 3D : vue du site d'après le modèle fourni (terrain, rivière, route, 11 halles, intérieur avec machines)
+// Visuel et interaction repris à l'identique ; les valeurs viennent du logiciel (aucune valeur simulée) :
+// une halle 3D est reliée à la halle du Werksplan portant le même nom (« Halle 1 » …), ses machines aux installations de cette halle.
+// =====================================================================
+const STANDORT_HALLEN = [["h_a", "Halle 1", "Nordhalle"], ["h_b1", "Halle 2", "Westflügel Nord"], ["h_b2", "Halle 3", "Westflügel Süd"], ["h_b3", "Halle 4", "Produktion & Verwaltung"],
+  ["h_b4", "Halle 5", "Pressautomaten"], ["h_c1", "Halle 6", "Ostgebäude Nord"], ["h_c2", "Halle 7", "Ostgebäude Mitte"], ["h_c3", "Halle 8", "Reinraum"],
+  ["h_d1", "Halle 9", "Südhalle groß"], ["h_d2", "Halle 10", "Südhalle klein"], ["h_nb", "Halle 11", "Trafo & Technik"]];
+
+function standortSzene(host, THREE, daten, aufrufe) {
+  host.innerHTML = `<canvas class="s3-c"></canvas>
+<div class="s3-top"><button class="s3-back">← Zurück zum Standort</button>
+  <div class="s3-pill t"><b class="s3-crumb">Werksgelände</b><span class="s3-crumb2"></span></div><span class="s3-pills"></span></div>
+<div class="s3-tip"></div><div class="s3-note">Anklicken · Ziehen zum Drehen</div>
+<div class="s3-card"><span class="s3-x">×</span><h2 class="s3-t"></h2><small class="s3-s"></small><div class="s3-big"></div><canvas class="s3-spark" width="560" height="140"></canvas>
+  <div class="s3-leer">Kein Verlauf vorhanden</div><div class="s3-kp"></div><div class="s3-alert" style="display:none"></div><button class="s3-detail" style="display:none">Im Werksplan öffnen ›</button></div>
+<div class="s3-fade"></div>`;
+  const $ = (k) => host.querySelector(`.s3-${k}`);
+  const fmt = (n, d) => (n == null || !Number.isFinite(n) ? "–" : n.toLocaleString("de-DE", { minimumFractionDigits: d, maximumFractionDigits: d }));
+  let D = daten;
+  const CFG = () => D.stationen;
+  const groesse = () => ({ w: host.clientWidth || 800, h: host.clientHeight || 600 });
+
+  // ---------- 3D ----------
+  const ZC = 10.5, ZI = 7.2, cv = $("c");
+  const renderer = new THREE.WebGLRenderer({ canvas: cv, antialias: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.shadowMap.enabled = true;
+  const scene = new THREE.Scene(); scene.background = new THREE.Color(0xe3ecf2);
+  const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -80, 160);
+  let az = -0.97, zoom = ZC; const tgt = new THREE.Vector3(0, 0.4, 0);
+  function view() {
+    const { w, h } = groesse(), a = w / h, z = (a < 1 ? 1.9 : 1) * zoom; renderer.setSize(w, h, false);
+    cam.left = -z * a; cam.right = z * a; cam.top = z; cam.bottom = -z; cam.updateProjectionMatrix();
+    const r = 26; cam.position.set(tgt.x + Math.sin(az) * r, tgt.y + r * 0.75, tgt.z + Math.cos(az) * r); cam.lookAt(tgt);
+  }
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8899aa, 0.75));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.85); sun.position.set(8, 14, 6); sun.castShadow = true;
+  Object.assign(sun.shadow.camera, { left: -17, right: 17, top: 17, bottom: -17 }); scene.add(sun);
+  const campus = new THREE.Group(), inter = new THREE.Group(); scene.add(campus, inter); inter.visible = false;
+  let root = campus;
+  const Mt = (c, o) => new THREE.MeshStandardMaterial(Object.assign({ color: c, roughness: 0.75 }, o || {}));
+  const box = (w, h, d, c, x, y, z, g, o) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), Mt(c, o)); m.position.set(x, y + h / 2, z); m.castShadow = m.receiveShadow = true; (g || root).add(m); return m; };
+  const cyl = (r, h, c, x, y, z, g, s = 24) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, h, s), Mt(c)); m.position.set(x, y + h / 2, z); m.castShadow = true; (g || root).add(m); return m; };
+  let clickable = [], lamps = {}; const tick = { campus: [], inter: [] };
+  const LAMPE = { ok: 0x2fb872, warn: 0xf59e0b, stoer: 0xdc3545, aus: 0x9aa5b1 };
+  function station(key, x, z, top, fn, onClick, drill) {
+    const g = new THREE.Group(); g.position.set(x, 0.12, z); g.userData = { key, onClick, drill }; fn(g); root.add(g);
+    g.traverse(o => { if (o.isMesh) o.userData.group = g; });
+    const farbe = LAMPE[CFG()[key]?.lampe || "aus"];
+    const l = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 16), new THREE.MeshStandardMaterial({ color: farbe, emissive: farbe, emissiveIntensity: 0.8 }));
+    l.userData.group = g; l.position.y = top + 0.4; g.add(l); lamps[key] = l;
+    clickable.push(g); return g;
+  }
+  function lampenFaerben() { Object.entries(lamps).forEach(([k, l]) => { const f = LAMPE[CFG()[k]?.lampe || "aus"]; l.material.color.set(f); l.material.emissive.set(f); }); }
+
+  // ---------- Standort (Grundriss nach Karte, Norden oben) ----------
+  const PS = 0.04, PX = (x, y) => [(x - 271) * PS, (y - 342) * PS];
+  function lerpY(poly, y) { for (let i = 0; i < poly.length - 1; i++) { const a = poly[i], b = poly[i + 1]; if (y >= a[1] && y <= b[1]) return a[0] + (b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]); } return poly[poly.length - 1][0]; }
+  function ribbon(pts, wpx, col, y) {
+    const pos = [], idx = []; const n = pts.length;
+    for (let i = 0; i < n; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)]; const dx = b[0] - a[0], dy = b[1] - a[1]; const l = Math.hypot(dx, dy) || 1; const nx = -dy / l * wpx / 2, ny = dx / l * wpx / 2;
+      const L = PX(pts[i][0] + nx, pts[i][1] + ny), R = PX(pts[i][0] - nx, pts[i][1] - ny); pos.push(L[0], y, L[1], R[0], y, R[1]); if (i < n - 1) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ color: col, roughness: 0.8, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })); m.receiveShadow = true; root.add(m); return m;
+  }
+  function poly(pts, col, y) {
+    const sh = new THREE.Shape(); pts.forEach((p, i) => { const q = PX(p[0], p[1]); i ? sh.lineTo(q[0], -q[1]) : sh.moveTo(q[0], -q[1]); });
+    const m = new THREE.Mesh(new THREE.ShapeGeometry(sh), new THREE.MeshStandardMaterial({ color: col, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })); m.rotation.x = -Math.PI / 2; m.position.y = y; m.receiveShadow = true; root.add(m); return m;
+  }
+  const RIVER = [[440, -20], [468, 60], [485, 130], [480, 200], [440, 300], [410, 370], [405, 430], [425, 500], [470, 580], [525, 705]];
+  const ROAD = [[85, -20], [60, 100], [70, 170], [110, 250], [200, 370], [300, 500], [370, 620], [392, 662]];
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  function buildCampus() {
+    root = campus; while (campus.children.length) campus.remove(campus.children[0]); clickable = []; lamps = {}; seed = 7;
+    box(22, 0.5, 27.6, 0xb9a98c, 0, -0.5, 0); box(21.8, 0.12, 27.4, 0x8fc084, 0, 0, 0);
+    poly([[100, 215], [125, 160], [205, 150], [232, 125], [242, -10], [322, -10], [388, 375], [410, 525], [395, 625], [380, 640], [330, 540], [215, 420], [110, 255]], 0xd5d7da, 0.125);
+    ribbon(RIVER, 46, 0x4fb0dc, 0.13); ribbon(ROAD, 18, 0x8f99a2, 0.14);
+    const pk = PX(272, 70); box(2.5, 0.02, 4.4, 0xa9afb4, pk[0], 0.14, pk[1]);
+    for (let r = 0; r < 4; r++) for (let i = 0; i < 9; i++) box(0.34, 0.14, 0.2, [0xdddddd, 0x3a5f8a, 0x333333, 0xb23a3a][(i + r) % 4], pk[0] - 0.9 + r * 0.6, 0.14, pk[1] - 1.9 + i * 0.45).castShadow = true;
+    const tree = (x, z, s) => { const h = 0.4 + rnd() * 0.35; const t = new THREE.Mesh(new THREE.ConeGeometry(0.22 * s, h * s * 1.5, 7), Mt(rnd() > 0.5 ? 0x3f7d3f : 0x2f6a38)); t.position.set(x, 0.12 + h * s * 0.8, z); t.castShadow = true; campus.add(t); };
+    for (let i = 0; i < 110; i++) { const py = rnd() * 685, px = rnd() * (lerpY(ROAD, Math.min(py, 660)) - 22); if (px > 4 && px < 530) { const [w, z] = PX(px, py); if (Math.abs(w) < 10.7 && Math.abs(z) < 13.5) tree(w, z, 1); } }
+    for (let i = 0; i < 30; i++) { const py = rnd() * 685, rx = lerpY(RIVER, py); const side = rnd() > 0.5 ? 1 : -1; const px = rx + side * (34 + rnd() * 14); if (px <= 538 && px >= 4) { const [w, z] = PX(px, py); const nearRoad = Math.abs(px - lerpY(ROAD, Math.min(py, 660))) < 30; if (!nearRoad && Math.abs(z) < 13.5) tree(w, z, 0.9); } }
+    const bld = (key, cx, cy, L, Wd, phi, h, roof, body, opts) => {
+      opts = opts || {}; const [x, z] = PX(cx, cy); const Ls = L * PS, Ws = Wd * PS;
+      const masch = CFG()[key]?.maschinen || [];
+      return station(key, x, z, h + 0.35, g => {
+        g.rotation.y = -phi * Math.PI / 180; box(Ls, h, Ws, body, 0, 0, 0, g); box(Ls + 0.08, 0.14, Ws + 0.08, roof, 0, h, 0, g);
+        if (opts.lights) for (let i = 0; i < 3; i++) box(Ls * 0.18, 0.05, Ws * 0.5, 0xdbe9f3, -Ls * 0.3 + i * Ls * 0.3, h + 0.14, 0, g);
+        box(Ls * 0.5, h * 0.5, 0.04, 0x49596a, 0, 0, Ws / 2 + 0.02, g);
+      }, () => { masch.length ? enter(key, () => buildMachines(masch)) : openCard(key); }, masch.length > 0);
+    };
+    const U = 66, RED = 0xc85a3c, DRK = 0x434b57, WHT = 0xeceff1, GRY = 0xb9bec3;
+    bld("h_a", 171, 205, 68, 29, -26.6, 1.5, WHT, 0xdfe3e7, { lights: 1 });
+    bld("h_b1", 155, 266, 55, 50, -28, 1.7, RED, 0xd9d2c8);
+    bld("h_b2", 183, 302, 34, 42, -28, 1.5, RED, 0xd9d2c8);
+    bld("h_b3", 222, 287, 56, 36, -30, 1.9, GRY, 0xdfe3e7, { lights: 1 });
+    bld("h_b4", 235, 318, 53, 27, -23, 1.1, DRK, 0xc7ccd1);
+    bld("h_c1", 299, 275, 58, 51, U, 1.9, DRK, 0xd6dadf, { lights: 1 });
+    bld("h_c2", 320, 320, 42, 51, U, 1.8, DRK, 0xd6dadf, { lights: 1 });
+    bld("h_c3", 338, 358, 40, 46, U, 1.5, WHT, 0xdfe3e7);
+    bld("h_d1", 308, 435, 88, 58, U, 2.1, WHT, 0xe3e7ea, { lights: 1 });
+    bld("h_d2", 338, 503, 62, 56, U, 1.8, DRK, 0xd6dadf, { lights: 1 });
+    bld("h_nb", 368, 553, 21, 16, -17, 0.8, 0xe0662c, 0xd9d2c8);
+    tick.campus = [];
+  }
+
+  // ---------- Innenräume ----------
+  function room() {
+    box(15, 0.5, 9, 0xc9a77c, 0, -0.5, 0); box(14, 0.12, 8, 0xeef1f3, 0, 0, 0);
+    box(14, 1.8, 0.2, 0xd5dde5, 0, 0.12, -4.1); box(0.2, 1.8, 8, 0xd5dde5, -7.1, 0.12, 0); box(14, 0.08, 0.22, 0x5f7790, 0, 1.92, -4.1); box(0.22, 0.08, 8, 0x5f7790, -7.1, 1.92, 0);
+  }
+  function enterSetup() { root = inter; while (inter.children.length) inter.remove(inter.children[0]); clickable = []; lamps = {}; tick.inter = []; room(); }
+  function spritzM(g, mv, i) {
+    box(4.4, 0.45, 1.2, 0x555f6a, 0, 0, 0, g); box(1.5, 1.5, 1.0, 0x2f6fb3, -1.45, 0.45, 0, g);
+    const pl = box(0.28, 1.05, 0.8, 0xe8504b, -0.45, 0.6, 0, g);
+    [-0.3, 0.3].forEach(z => { box(1.2, 0.08, 0.08, 0xaaaaaa, -0.75, 1.45, z, g); box(1.2, 0.08, 0.08, 0xaaaaaa, -0.75, 0.7, z, g); });
+    box(1.6, 0.6, 0.8, 0x6b7f95, 1.3, 0.45, 0, g);
+    const hc = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 1.8, 16), Mt(0x555f6a)); hc.rotation.z = Math.PI / 2; hc.position.set(1.3, 1.35, 0); hc.castShadow = true; g.add(hc);
+    const cn = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.5, 4), Mt(0xe8eef3)); cn.rotation.x = Math.PI; cn.rotation.y = Math.PI / 4; cn.position.set(1.9, 1.9, 0); g.add(cn);
+    box(0.55, 1.2, 0.5, 0xf4efe6, 0.1, 0, 0.85, g); box(0.35, 0.3, 0.05, 0x9ed0ff, 0.1, 0.75, 1.12, g);
+    const arm = new THREE.Group(); arm.position.set(-1.2, 0.45, -1.1); g.add(arm); cyl(0.15, 0.5, 0x555f6a, 0, 0, 0, arm); box(0.12, 0.12, 1, 0xf2b84b, 0, 0.55, 0.4, arm);
+    mv.push(t => { pl.position.x = -0.65 + (Math.sin(t * 2 + i * 1.3) + 1) * 0.2; arm.rotation.y = Math.sin(t * 1.2 + i) * 0.6; });
+  }
+  function pressM(g, mv, i) {
+    box(3.4, 0.35, 2.4, 0x555f6a, 0, 0, 0, g);
+    [[-1.3, -0.8], [1.3, -0.8], [-1.3, 0.8], [1.3, 0.8]].forEach(p => box(0.3, 2.2, 0.3, 0x6b7f95, p[0], 0.35, p[1], g));
+    box(3.1, 0.5, 2.1, 0x44546a, 0, 2.55, 0, g); box(1.9, 0.15, 1.3, 0xb8c2cc, 0, 0.35, 0, g);
+    const pis = box(0.8, 0.9, 0.8, 0xe8504b, 0, 1.2, 0, g); box(0.9, 1.2, 0.5, 0xf4efe6, 2.2, 0, 0.4, g); box(0.6, 0.4, 0.05, 0x9ed0ff, 2.2, 0.7, 0.66, g);
+    mv.push(t => { pis.position.y = 1.65 + Math.sin(t * 2 + i * 1.3) * 0.45; });
+  }
+  function buildMachines(list) {
+    enterSetup(); const mv = [];
+    list.forEach((m, i) => station(m.id, m.x, m.z, 2.2, g => { m.type === "p" ? pressM(g, mv, i) : spritzM(g, mv, i); }));
+    tick.inter = [(dt, t) => mv.forEach(f => f(t))];
+  }
+
+  // ---------- Interaktion ----------
+  let azC = az, mode = "campus", hover = null, sel = null, drag = false, moved = 0, lx = 0, busy = false, curHall = null, curKey = null;
+  const ray = new THREE.Raycaster(), mouse = new THREE.Vector2(), tip = $("tip"), card = $("card");
+  function pick(e) { const r = cv.getBoundingClientRect(); mouse.set((e.clientX - r.left) / r.width * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1); ray.setFromCamera(mouse, cam); const h = ray.intersectObjects(clickable, true)[0]; return h ? h.object.userData.group : null; }
+  const runter = e => { drag = true; moved = 0; lx = e.clientX; };
+  const hoch = e => { const war = drag; drag = false; if (!war || busy || moved >= 5 || e.target !== cv) return; const g = pick(e); if (g) { if (g.userData.onClick) g.userData.onClick(); else openCard(g.userData.key); } else closeCard(); };
+  const bewegt = e => {
+    if (drag) { const dx = e.clientX - lx; lx = e.clientX; moved += Math.abs(dx); az -= dx * 0.006; return; }
+    if (e.target !== cv) { tip.style.display = "none"; return; }
+    const g = pick(e); hover = g; cv.style.cursor = g ? "pointer" : "grab";
+    if (g) { const k = g.userData.key, c = CFG()[k]; const r = host.getBoundingClientRect(); tip.style.display = "block"; tip.style.left = e.clientX - r.left + 14 + "px"; tip.style.top = e.clientY - r.top + 14 + "px";
+      tip.textContent = `${c?.title || k} · ${fmt(c?.wert, c?.dec || 0)} ${c?.unit || ""}${g.userData.drill ? "  ›" : ""}`; }
+    else tip.style.display = "none";
+  };
+  cv.addEventListener("pointerdown", runter); addEventListener("pointerup", hoch); addEventListener("pointermove", bewegt);
+  $("x").onclick = () => closeCard();
+  $("detail").onclick = () => { const c = CFG()[sel]; if (c?.anlageId) aufrufe.oeffnen?.(c.anlageId); };
+  const sp = $("spark"), ctx = sp.getContext("2d");
+  function openCard(k) {
+    sel = k; const c = CFG()[k]; if (!c) return; $("t").textContent = c.title; $("s").textContent = c.sub || ""; card.classList.add("on");
+    const a = $("alert"); if (c.alert) { a.style.display = "block"; a.textContent = "⚠ " + c.alert; } else a.style.display = "none";
+    $("detail").style.display = c.anlageId ? "block" : "none"; refreshCard();
+  }
+  function closeCard() { sel = null; card.classList.remove("on"); }
+  function refreshCard() {
+    if (!sel) return; const c = CFG()[sel]; if (!c) return closeCard();
+    $("big").innerHTML = `${fmt(c.wert, c.dec || 0)}<span>${c.einheitText || c.unit || ""}</span>`;
+    $("kp").innerHTML = (c.kpis || []).map(a => `<div class="s3-k"><span>${a[0]}</span><span>${a[1]}</span></div>`).join("");
+    const arr = (c.verlauf || []).filter(v => Number.isFinite(v));
+    sp.style.display = arr.length > 1 ? "block" : "none"; $("leer").style.display = arr.length > 1 ? "none" : "block";
+    if (arr.length > 1) {
+      const W = sp.width, H = sp.height, mn = Math.min(...arr) * 0.9, mx = Math.max(...arr) * 1.05; ctx.clearRect(0, 0, W, H);
+      ctx.beginPath(); arr.forEach((v, i) => { const x = i / (arr.length - 1) * W, y = H - 8 - ((v - mn) / (mx - mn || 1)) * (H - 24); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+      ctx.strokeStyle = "#2e86c1"; ctx.lineWidth = 3; ctx.lineJoin = "round"; ctx.stroke(); ctx.lineTo(W, H); ctx.lineTo(0, H); ctx.fillStyle = "#2e86c133"; ctx.fill();
+      ctx.fillStyle = "#99a"; ctx.font = "20px system-ui"; ctx.fillText(c.verlaufText || "", 6, 20);
+    }
+  }
+  function kopf() {
+    $("crumb").textContent = mode === "inside" ? CFG()[curKey]?.title || "" : "Werksgelände";
+    $("crumb2").textContent = mode === "inside" ? `Standort ▸ ${CFG()[curKey]?.title || ""} · Anlagen anklicken` : D.untertitel || "Halle anklicken";
+    $("pills").innerHTML = mode === "inside" ? "" : (D.pills || []).map(p => `<div class="s3-pill">${p.live ? '<b><span class="s3-dot"></span>' : "<b>"}${p.wert}</b>${p.text}</div>`).join("");
+  }
+
+  // ---------- Übergänge ----------
+  let tweenRaf = 0;
+  function tween(z0, z1, t0, t1, ms, done) {
+    const s = performance.now(); busy = true;
+    (function f() { const p = Math.min(1, (performance.now() - s) / ms), e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      zoom = z0 + (z1 - z0) * e; tgt.lerpVectors(t0, t1, e); if (p < 1) tweenRaf = requestAnimationFrame(f); else { busy = false; done && done(); } })();
+  }
+  const fade = $("fade");
+  function reset() { closeCard(); hover = null; tip.style.display = "none"; }
+  function enter(key, builder) {
+    if (busy || mode !== "campus") return; reset(); const g = clickable.find(x => x.userData.key === key); curHall = g.position.clone(); curKey = key;
+    tween(ZC, 4, new THREE.Vector3(0, 0.4, 0), new THREE.Vector3(g.position.x, 0.8, g.position.z), 650, () => {
+      fade.style.opacity = 1; setTimeout(() => { campus.visible = false; builder(); inter.visible = true; mode = "inside"; zoom = ZI; tgt.set(0, 0.8, 0); azC = az; az = 0.5;
+        $("back").style.display = "block"; kopf(); fade.style.opacity = 0; }, 280);
+    });
+  }
+  $("back").onclick = () => {
+    if (busy || mode !== "inside") return; reset(); fade.style.opacity = 1;
+    setTimeout(() => { inter.visible = false; campus.visible = true; buildCampus(); mode = "campus"; az = azC; zoom = 4; tgt.copy(curHall); tgt.y = 0.8;
+      $("back").style.display = "none"; kopf(); fade.style.opacity = 0; tween(4, ZC, curHall.clone().setY(0.8), new THREE.Vector3(0, 0.4, 0), 650); }, 280);
+  };
+
+  buildCampus(); kopf(); view();
+  const ro = new ResizeObserver(() => view()); ro.observe(host);
+  let last = performance.now(), raf = 0;
+  (function loop() {
+    raf = requestAnimationFrame(loop); const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now; const t = now / 1000;
+    (mode === "campus" ? tick.campus : tick.inter).forEach(f => f(dt, t));
+    clickable.forEach(g => { const up = (g === hover || g.userData.key === sel) ? 0.2 : 0; g.position.y += ((0.12 + up) - g.position.y) * 0.2;
+      const l = lamps[g.userData.key]; if (l) l.scale.setScalar(1 + 0.15 * Math.sin(t * 3 + g.position.x)); });
+    view(); renderer.render(scene, cam);
+  })();
+
+  return {
+    aktualisieren(neu) { D = neu; lampenFaerben(); kopf(); refreshCard(); },
+    zerstoeren() {
+      cancelAnimationFrame(raf); cancelAnimationFrame(tweenRaf); ro.disconnect();
+      removeEventListener("pointerup", hoch); removeEventListener("pointermove", bewegt); cv.removeEventListener("pointerdown", runter);
+      scene.traverse(o => { o.geometry?.dispose?.(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => m.dispose()); });
+      renderer.dispose(); host.innerHTML = "";
+    }
+  };
+}
+
+// données réelles pour la scène : halles du Werksplan (par nom), énergie des installations liées, pannes, maintenance, valeurs en direct
+function standortDaten({ anlagen, en, wartung, live, jahr }) {
+  const norm = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const hallen = (anlagen || []).filter(a => a.typ === "halle");
+  const rows = en.daten?.aktuell || [];
+  const letzter = rows.length ? Math.max(...rows.map(r => r.Monat)) : 0;
+  const seuMonate = (seu) => { const d = SEU_DEF.find(a => a.key === seu); return d ? MONATE.map((_, i) => { const r = rows.find(x => x.Monat === i + 1); return r ? num(r[d.v]) : null; }) : null; };
+  const offen = (id) => wartung.stoerungen.filter(s => !s.ende && s.anlage === id);
+  const bald = dayjs().add(7, "day").format("YYYY-MM-DD");
+  const faellig = (id) => wartung.plaene.filter(p => p.anlage === id && naechsteWartung(p) && naechsteWartung(p) <= bald);
+  const LIVE_TEXT = { lauf: "läuft", stopp: "steht", stoerung: "Störung", veraltet: "keine aktuellen Werte", keine: "keine Werte", fehler: "Fehler" };
+  const stationen = {};
+  let mitDaten = 0, livePunkte = 0;
+  const lampe = (st, fl, lv) => (st.some(s => s.stufe === "stillstand") || lv?.status === "stoerung" ? "stoer" : st.length || fl.length ? "warn" : "ok");
+  for (const [key, titel, sub] of STANDORT_HALLEN) {
+    const h = hallen.find(x => norm(x.name) === norm(titel));
+    if (!h) { stationen[key] = { title: titel, sub: `${sub} · noch nicht mit dem Werksplan verknüpft`, unit: "", wert: null, lampe: "aus",
+      kpis: [["So verknüpfen", `im Werksplan eine Halle „${titel}“ anlegen`]] }; continue; }
+    mitDaten++;
+    const kinder = (anlagen || []).filter(a => a.typ !== "halle" && a.halle === h.id);
+    const reihen = kinder.map(k => (k.seu ? seuMonate(k.seu) : null)).filter(Boolean);
+    const monate = MONATE.map((_, i) => (reihen.some(r => r[i] != null) ? reihen.reduce((s, r) => s + (r[i] ?? 0), 0) : null));
+    const st = [...offen(h.id), ...kinder.flatMap(k => offen(k.id))], fl = [...faellig(h.id), ...kinder.flatMap(k => faellig(k.id))];
+    const maschinen = kinder.slice(0, 9).map((k, i, l) => {
+      const n = l.length, spalten = Math.min(3, n), zeilen = Math.ceil(n / 3), sp = i % 3, ze = Math.floor(i / 3);
+      const imZeile = Math.min(3, n - ze * 3), x = (sp - (imZeile - 1) / 2) * 4.6, z = (ze - (zeilen - 1) / 2) * (zeilen > 2 ? 2.5 : 3.2);
+      const lv = live?.anlagen?.[k.id], ks = offen(k.id), kf = faellig(k.id), km = k.seu ? seuMonate(k.seu) : null;
+      if (lv && lv.status !== "keine") livePunkte++;
+      const lvWert = lv?.werte?.find(w => Number.isFinite(Number(w.wert)));
+      const naechste = kinder.length && wartung.plaene.filter(p => p.anlage === k.id).map(naechsteWartung).filter(Boolean).sort()[0];
+      stationen[k.id] = {
+        title: k.name, sub: `${h.name}${k.typ ? ` · ${k.typ}` : ""}`, anlageId: k.id,
+        wert: lvWert ? Number(lvWert.wert) : km && letzter ? km[letzter - 1] : null, dec: lvWert ? 1 : 0,
+        unit: lvWert ? lvWert.einheit || "" : "kWh", einheitText: lvWert ? `${lvWert.einheit || ""} · ${lvWert.name}` : letzter ? `kWh im ${MONATE[letzter - 1]}` : "",
+        verlauf: lv?.verlauf?.length ? [...lv.verlauf].reverse().map(p => Number(p.v)) : (km || []).slice(0, letzter).filter(v => v != null),
+        verlaufText: lv?.verlauf?.length ? "letzte Messwerte" : `Monate ${jahr}`,
+        kpis: [["Status", lv ? LIVE_TEXT[lv.status] || lv.status : "keine Live-Daten"], ["Offene Störungen", ks.length], ["Nächste Wartung", naechste ? datumDE(naechste) : "–"], ["Dokumente", (k.dokumente || []).length]],
+        alert: ks[0] ? `Störung: ${ks[0].titel}` : kf[0] ? `Wartung fällig: ${kf[0].titel}` : null, lampe: lampe(ks, kf, lv),
+        id: k.id, x, z, type: /press/i.test(`${k.name} ${k.typ || ""}`) ? "p" : "s"
+      };
+      return stationen[k.id];
+    });
+    stationen[key] = { title: h.name, sub: (h.beschreibung || "").split("\n")[0] || sub, anlageId: h.id, unit: "kWh",
+      einheitText: letzter ? `kWh im ${MONATE[letzter - 1]}` : "kWh", wert: letzter ? monate[letzter - 1] : null, dec: 0,
+      verlauf: monate.slice(0, letzter).filter(v => v != null), verlaufText: `Monate ${jahr}`,
+      kpis: [["Anlagen", kinder.length], ["Offene Störungen", st.length], ["Wartung fällig (7 Tage)", fl.length], ["Dokumente", (h.dokumente || []).length]],
+      alert: st[0] ? `Störung: ${st[0].titel}` : fl[0] ? `Wartung fällig: ${fl[0].titel}` : null, lampe: lampe(st, fl), maschinen };
+  }
+  const summe = rows.find(r => r.Monat === letzter);
+  const st = en.kpi?.standort;
+  return {
+    stationen, mitDaten,
+    untertitel: mitDaten ? "Halle anklicken, um Werte zu sehen oder hineinzuzoomen" : "Im Werksplan Hallen mit den Namen „Halle 1“ … „Halle 11“ anlegen, um sie hier zu verknüpfen",
+    pills: [
+      { wert: summe ? kurzEnergie(SEU_DEF.reduce((s, a) => s + num(summe[a.v]), 0)) : "–", text: letzter ? `Energie ${MONATE[letzter - 1]} ${jahr}` : "Energie" },
+      { wert: st?.veraenderung != null ? `${st.veraenderung > 0 ? "+" : "−"}${dez(Math.abs(st.veraenderung) * 100, 1)} %` : "–", text: `EnPI ggü. Basis ${en.basisJahr || ""}` },
+      { wert: livePunkte ? "Live" : "Monatswerte", text: livePunkte ? `${livePunkte} Anlage(n) mit Live-Daten` : "aus den Energiedaten", live: !!livePunkte }
+    ]
+  };
+}
+
+function Standort3D({ en, wartung, jahr, oeffnen }) {
+  const host = useRef(null), szene = useRef(null);
+  const [anlagen, setAnlagen] = useState(null);
+  const [live, setLive] = useState(null);
+  const [fehler, setFehler] = useState("");
+  useEffect(() => {
+    api("/api/anlagen").then(d => setAnlagen(d.liste)).catch(e => setFehler(e.message));
+    const laden = () => api("/api/live").then(setLive).catch(() => {});
+    laden(); const t = setInterval(laden, 30000); return () => clearInterval(t);
+  }, []);
+  const daten = useMemo(() => (anlagen ? standortDaten({ anlagen, en, wartung, live, jahr }) : null), [anlagen, en, wartung, live, jahr]);
+  const aufrufe = useRef({}); aufrufe.current.oeffnen = oeffnen;
+  useEffect(() => {
+    if (!daten || szene.current || !host.current) return;
+    let weg = false;
+    import("three").then(THREE => { if (!weg && host.current) szene.current = standortSzene(host.current, THREE, daten, { oeffnen: (id) => aufrufe.current.oeffnen?.(id) }); })
+      .catch(e => setFehler(`3D-Darstellung nicht verfügbar: ${e.message}`));
+    return () => { weg = true; };
+  }, [daten]);
+  useEffect(() => { if (daten && szene.current) szene.current.aktualisieren(daten); }, [daten]);
+  useEffect(() => () => { szene.current?.zerstoeren(); szene.current = null; }, []);
+  if (fehler) return <Alert type="error" showIcon message="Standort konnte nicht geladen werden" description={fehler} />;
+  return (
+    <div className="s3" ref={host}>{!daten && <Flex align="center" justify="center" style={{ height: "100%" }}><Skeleton active style={{ maxWidth: 400 }} /></Flex>}</div>
+  );
+}
+
+function WerkAnsicht(props) {
+  const mitLink = location.hash.slice(1).split("/").length > 1;                // lien #werk/<id> (code QR) : fiche directement
+  const [ansicht, setAnsicht] = useState(() => { if (mitLink) return "plan"; try { return localStorage.getItem("mrs-werk-ansicht") || "standort"; } catch { return "standort"; } });
+  const wechseln = (v) => { setAnsicht(v); try { localStorage.setItem("mrs-werk-ansicht", v); } catch { /* sans stockage */ } };
+  return (
+    <Flex vertical gap={12}>
+      <Flex justify="space-between" align="center" wrap gap={8}>
+        <Segmented value={ansicht} onChange={wechseln} options={[{ value: "standort", label: "Standort 3D", icon: <BuildOutlined /> }, { value: "plan", label: "Werksplan bearbeiten", icon: <EditOutlined /> }]} />
+        {ansicht === "standort" && <Text type="secondary" style={{ fontSize: 12 }}>Halle oder Anlage anklicken · Ziehen zum Drehen · „Im Werksplan öffnen“ zeigt Dokumente und Daten</Text>}
+      </Flex>
+      {ansicht === "standort"
+        ? <Standort3D en={props.en} wartung={props.wartung} jahr={props.jahr} oeffnen={(id) => { location.hash = `werk/${id}`; setAnsicht("plan"); }} />
+        : <Werksplan {...props} />}
+    </Flex>
+  );
+}
+
 // ---------- Datenqualität ----------
 const ALERT_TYP = { ok: "success", warnung: "warning", fehler: "error", info: "info" };
 function Datenqualitaet({ hinweise, jahr }) {
@@ -9566,8 +9896,8 @@ const SEITEN = [
   { key: "unterwegs", gruppe: "Betrieb", label: "Mobile Erfassung", icon: <HandyIcon /> },
   { key: "monitor", gruppe: "Betrieb", label: "Hallenmonitor", icon: <DesktopOutlined /> },
   // Améliorer et prouver (ISO 50001)
-  { key: "massnahmen", gruppe: "Verbessern & ISO 50001", label: "Maßnahmen", icon: <ProjectOutlined /> },
   { key: "iso", gruppe: "Verbessern & ISO 50001", label: "ISO 50001", icon: <SafetyCertificateOutlined /> },
+  { key: "massnahmen", gruppe: "Verbessern & ISO 50001", label: "Maßnahmen", icon: <ProjectOutlined /> },
   { key: "bericht", gruppe: "Verbessern & ISO 50001", label: "Energiebericht", icon: <FilePdfOutlined /> },
   { key: "kommentar", gruppe: "Verbessern & ISO 50001", label: "Monatskommentar", icon: <CommentOutlined /> },
   // Données (« Daten ansehen » seulement pour qui ne peut pas modifier : sinon « Daten pflegen » fait la même chose)
@@ -9772,7 +10102,7 @@ function App({ dunkel, setDunkel, benutzer, abmelden, profilGespeichert }) {
                               action={<Button size="small" icon={<SyncOutlined />} onClick={() => location.reload()}>Neu laden</Button>} />}
             {seite === "uebersicht" && <UebersichtSeite k={k} laedt={laedt} dunkel={dunkel} jahr={jahr} />}
             {seite === "wartung" && <WartungSeite wartung={wartung} setWartung={setWartung} laden={wartungLaden} jahr={jahr} dunkel={dunkel} />}
-            {seite === "werk" && <Werksplan en={en} massnahmen={massnahmen.liste} warnungen={warnungen} wartung={wartung} setWartung={setWartung} jahr={jahr} dunkel={dunkel} darf={darfSchreiben} gehe={gehe} />}
+            {seite === "werk" && <WerkAnsicht en={en} massnahmen={massnahmen.liste} warnungen={warnungen} wartung={wartung} setWartung={setWartung} jahr={jahr} dunkel={dunkel} darf={darfSchreiben} gehe={gehe} />}
             {seite === "energie" && <Energie jahr={jahr} dunkel={dunkel} en={en} darf={darfSchreiben} massnahmen={massnahmen.liste} />}
             {seite === "kosten" && <EnergieKosten jahr={jahr} dunkel={dunkel} />}
             {seite === "fluss" && <Energiefluss jahr={jahr} en={en} dunkel={dunkel} />}
@@ -10219,6 +10549,29 @@ kbd { font-family: inherit; font-size: 11px; line-height: 1.6; padding: 0 6px; b
 .profil-icon { font-size: 28px; opacity: 1 !important; }
 .bereich-knopf { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; color: rgba(255,255,255,.7); font-size: 12px; overflow: hidden; }
 .bereich-knopf span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .bereich-knopf:hover { color: #fff; } .bereich-knopf:focus-visible { outline: 2px solid #4F83AA; }
+/* --- Standort 3D (d'après le modèle fourni) --- */
+.s3 { position: relative; height: calc(100dvh - 200px); min-height: 520px; border-radius: 14px; overflow: hidden; background: #e3ecf2; color: #1e2b3a; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+.s3-c { display: block; width: 100% !important; height: 100% !important; touch-action: none; }
+.s3-top { position: absolute; left: 16px; top: 14px; right: 16px; display: flex; gap: 10px; flex-wrap: wrap; align-items: stretch; pointer-events: none; }
+.s3-pills { display: contents; }
+.s3-pill { background: #fffc; backdrop-filter: blur(6px); border-radius: 12px; padding: 8px 14px; font-size: 12px; color: #5a6b7c; }
+.s3-pill b { display: block; font-size: 20px; color: #1e2b3a; } .s3-pill.t b { font-size: 15px; }
+.s3-back { pointer-events: auto; cursor: pointer; border: 0; background: #1e2b3a; color: #fff; border-radius: 12px; padding: 0 16px; font-size: 14px; display: none; }
+.s3-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2fb872; margin-right: 6px; animation: s3p 1.4s infinite; }
+@keyframes s3p { 50% { opacity: .3; } }
+.s3-card { position: absolute; right: 16px; bottom: 16px; width: 310px; background: #fff; border-radius: 16px; padding: 16px 18px; box-shadow: 0 10px 30px #0003; transform: translateY(20px); opacity: 0; pointer-events: none; transition: .25s; }
+.s3-card.on { transform: none; opacity: 1; pointer-events: auto; }
+.s3-card h2 { margin: 0; font-size: 17px; color: #1e2b3a; } .s3-card small { color: #789; }
+.s3-big { font-size: 30px; font-weight: 700; margin: 8px 0 0; } .s3-big span { font-size: 14px; font-weight: 500; color: #789; margin-left: 4px; }
+.s3-spark { width: 100%; height: 70px; margin: 6px 0 4px; } .s3-leer { font-size: 12px; color: #99a; margin: 6px 0; }
+.s3-k { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-top: 1px solid #eef2f6; font-size: 14px; } .s3-k span:last-child { font-weight: 700; text-align: right; }
+.s3-alert { margin-top: 8px; padding: 8px 10px; border-radius: 9px; background: #fff3e0; color: #9a5b00; font-size: 13px; }
+.s3-detail { margin-top: 10px; width: 100%; border: 0; border-radius: 9px; padding: 8px; background: #1e2b3a; color: #fff; cursor: pointer; font-size: 13px; }
+.s3-x { position: absolute; right: 14px; top: 8px; cursor: pointer; color: #99a; font-size: 18px; }
+.s3-tip { position: absolute; pointer-events: none; background: #1e2b3a; color: #fff; padding: 4px 9px; border-radius: 7px; font-size: 12px; display: none; white-space: nowrap; }
+.s3-note { position: absolute; left: 16px; bottom: 12px; font-size: 12px; color: #6b7c8d; }
+.s3-fade { position: absolute; inset: 0; background: #e3ecf2; opacity: 0; pointer-events: none; transition: opacity .25s; }
+@media (max-width: 600px) { .s3-card { left: 12px; right: 12px; width: auto; } .s3 { height: 70dvh; } }
 .mini-balken { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: rgba(127,127,127,.15); }
 `;
 
